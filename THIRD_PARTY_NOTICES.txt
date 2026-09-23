@@ -1,0 +1,36 @@
+CHITLOG THIRD-PARTY SOFTWARE NOTICES
+Release: ChitLog 1.0.0
+Copyright © 2026 Ashan Madusanka. All rights reserved in ChitLog's proprietary code and materials.
+
+ChitLog includes third-party software. ChitLog's proprietary EULA does not replace, reduce, or restrict rights granted under the licenses for those third-party components.
+
+The release build includes a LICENSES directory generated from the exact Python environment used to build ChitLog. That directory contains license files shipped by the runtime packages and the Python interpreter used in the release. For the Qt/PySide6 LGPLv3 route, the build also verifies that the full GNU GPLv3 and LGPLv3 texts are present; when the installed wheels do not contain them, the missing unmodified texts are obtained from the official GNU HTTPS license endpoints and their provenance is recorded.
+
+Primary runtime components include:
+
+1. Python
+   License: Python Software Foundation License and other notices distributed with Python.
+
+2. Qt for Python / PySide6, including PySide6-Essentials and Shiboken6
+   ChitLog uses QtCore, QtGui, and QtWidgets through PySide6.
+   Open-source licensing route selected for this release: GNU Lesser General Public License version 3 (LGPLv3), together with applicable Qt/PySide6 third-party notices.
+   ChitLog application code remains proprietary; LGPL-covered libraries remain subject to their own license.
+   See QT_LGPL_COMPLIANCE.txt and the LICENSES directory.
+
+3. sqlcipher3
+   License expression published by the package: MIT.
+   The packaged distribution may contain native SQLCipher/SQLite/cryptographic components carrying additional notices; the exact license files installed with the build environment are copied into LICENSES.
+
+4. argon2-cffi and its runtime dependencies
+   Used for password/PIN and recovery-answer hashing.
+   License files supplied by the installed distributions are included in LICENSES.
+
+5. keyring and its Windows runtime dependencies
+   Used to access Windows Credential Manager for protected local secret storage.
+   License files supplied by the installed distributions are included in LICENSES.
+
+BUILD TOOL NOTE
+PyInstaller is used as a build tool to create the Windows bundle. PyInstaller is not licensed as part of ChitLog's proprietary application code. The generated application may be distributed under ChitLog's own license subject to the licenses of bundled dependencies.
+
+NO ENDORSEMENT
+The names of third-party projects and copyright holders are used only for attribution and license compliance. They do not imply endorsement of ChitLog.

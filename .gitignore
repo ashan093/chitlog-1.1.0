@@ -1,0 +1,159 @@
+# ============================================================
+# ChitLogBuild - Git ignore
+# Keep source code in GitHub; exclude local environments,
+# build/packaging output, installers, user data, secrets and caches.
+# ============================================================
+
+# Python cache
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual environments
+.venv/
+.venv-build/
+venv/
+env/
+ENV/
+
+# Test/tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# Build / packaging / release output
+build/
+dist/
+packaging/
+release/
+releases/
+installer/
+installers/
+output/
+artifacts/
+release_staging/
+publish/
+publish_output/
+
+# Compiled installers / binaries
+*.exe
+*.msi
+*.msix
+*.msixbundle
+*.appx
+*.appxbundle
+*.cab
+*.pdb
+
+# PyInstaller / Nuitka generated directories
+*.build/
+*.dist/
+*.onefile-build/
+
+# Archives
+*.zip
+*.rar
+*.7z
+*.tar
+*.tar.gz
+*.tgz
+
+# Live databases / local financial data
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+*.sqlite-shm
+*.sqlite-wal
+*.sqlcipher
+data/
+user_data/
+userdata/
+app_data/
+appdata/
+
+# ChitLog backups
+*.chitlogbak
+backup/
+backups/
+restore_temp/
+recovery_backups/
+
+# Logs / crash files
+*.log
+logs/
+crashlogs/
+crash_dumps/
+*.dmp
+
+# Secrets / OAuth / credentials
+.env
+.env.*
+!.env.example
+secrets/
+credentials/
+private/
+tokens/
+credentials.json
+client_secret*.json
+token.json
+token_*.json
+oauth*.json
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Patch / temporary backup files
+_patch/
+*_patch/
+patches_temp/
+*.bak
+*.backup
+*.orig
+*.rej
+*.tmp
+*.temp
+*~
+*.pre_*.bak
+*.pre-*.bak
+
+# IDE / editor
+.vscode/
+.idea/
+.vs/
+*.code-workspace
+
+# Windows / OS junk
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
+
+# Temporary captures/screenshots
+captures/
+Captures/
+screenshots_temp/
+temp_screenshots/
+
+# Keep these source/config files tracked:
+# app.py
+# chitlog/
+# tests/
+# assets/
+# tools/
+# requirements.txt
+# requirements-dev.txt
+# requirements-build.txt
+# pytest.ini
+# README*
+# EULA*
+# THIRD_PARTY_NOTICES*
+# QT_LGPL_COMPLIANCE*

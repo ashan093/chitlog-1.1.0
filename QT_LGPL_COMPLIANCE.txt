@@ -1,0 +1,32 @@
+CHITLOG — QT / PYSIDE6 LGPLv3 COMPLIANCE NOTICE
+Release: ChitLog 1.0.0
+
+ChitLog uses PySide6 to access QtCore, QtGui, and QtWidgets. These Qt for Python components are distributed in this ChitLog release under the GNU Lesser General Public License version 3 (LGPLv3) route, not under a Qt commercial license.
+
+1. PROPRIETARY APPLICATION / SEPARATE LGPL LIBRARIES
+ChitLog's original application code and branding are proprietary. The Qt/PySide6 libraries remain separately licensed under their applicable open-source licenses.
+
+2. DYNAMIC LIBRARY DISTRIBUTION
+The Windows release is intentionally built in PyInstaller one-folder mode. Qt shared libraries and plugins remain separate files inside the installed ChitLog directory rather than being statically linked into ChitLog's proprietary executable.
+
+3. USER REPLACEMENT / RELINKING RIGHTS
+Users may replace compatible LGPL-covered Qt shared libraries with modified compatible versions for purposes permitted by the LGPL. ChitLog does not include an anti-tamper mechanism intended to prevent such replacement.
+
+The bundled Qt/PySide6 files are normally located under ChitLog's _internal directory. A user who replaces those libraries is responsible for maintaining ABI compatibility and the required Qt plugin layout.
+
+4. REVERSE ENGINEERING CARVE-OUT
+The ChitLog proprietary EULA does not prohibit reverse engineering when and to the extent needed to exercise rights granted by the LGPL for the LGPL-covered components, or when applicable law otherwise requires such permission.
+
+5. LICENSE TEXTS AND THIRD-PARTY NOTICES
+The ChitLog release includes a LICENSES directory collected from the exact runtime environment used for the release. It includes license materials shipped with the bundled runtime packages. If the installed PySide6/Qt wheels do not themselves contain complete GNU GPLv3/LGPLv3 license texts, the release build obtains the unmodified missing texts from the official GNU HTTPS license endpoints, validates the expected Version 3 headers, records their provenance, and includes them in LICENSES. The build fails rather than producing a distributable package if those required texts cannot be obtained and validated. THIRD_PARTY_NOTICES.txt identifies the principal components.
+
+6. QT/PYSIDE6 MODIFICATIONS
+This ChitLog release does not intentionally modify the Qt or PySide6 library source code.
+
+7. SOURCE-CODE OFFER FOR LGPL-COVERED QT/PYSIDE6 MATERIALS
+For at least three years after distribution of this ChitLog release, Ashan Madusanka offers to provide, upon request and at no more than the reasonable cost of distribution, the complete corresponding source code for the LGPL-covered Qt/PySide6 libraries used in this release, including any ChitLog-applied modifications if any are made in a future build.
+
+A request may be made through the same official distribution or support channel through which the requester obtained ChitLog. The exact package versions used for a release are recorded in the release's LICENSES/RUNTIME_DEPENDENCIES.txt file.
+
+8. NO RESTRICTION OF OPEN-SOURCE RIGHTS
+Nothing in ChitLog's proprietary EULA restricts rights granted directly under the LGPLv3 or any other applicable third-party open-source license. If there is a conflict for a third-party component, that component's license controls.

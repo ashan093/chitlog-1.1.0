@@ -1,0 +1,84 @@
+CHITLOG END-USER LICENSE AGREEMENT
+Version 1.0
+Effective date: 19 September 2026
+
+IMPORTANT: PLEASE READ THIS AGREEMENT CAREFULLY.
+
+This End-User License Agreement ("Agreement") is a legal agreement between you ("User") and Ashan Madusanka ("Licensor") for the ChitLog desktop software application, including its executable files, bundled documentation, updates supplied under this Agreement, and related materials (collectively, the "Software").
+
+By installing, copying, launching, or using the Software, you agree to this Agreement. If you do not agree, do not install or use the Software.
+
+1. LICENSE GRANT
+Subject to this Agreement, Licensor grants you a limited, non-exclusive, non-transferable, non-sublicensable license to install and use the Software on devices you control for personal use and for your own internal business use.
+
+You may make reasonable backup copies of the Software for archival or recovery purposes. No ownership rights are transferred to you.
+
+2. OWNERSHIP
+ChitLog, its original application source code, user-interface design, branding, logo, documentation, and other original materials are owned by Licensor, except for third-party components identified in the Software's third-party notices.
+
+Copyright © 2026 Ashan Madusanka. All rights reserved.
+
+3. RESTRICTIONS
+Except where applicable law or a third-party open-source license expressly permits otherwise, you may not:
+
+(a) sell, rent, lease, sublicense, redistribute, or commercially provide the Software as a standalone product without Licensor's written permission;
+(b) remove or alter ChitLog copyright, ownership, or license notices;
+(c) use the ChitLog name or logo in a way that falsely suggests sponsorship, partnership, or endorsement by Licensor;
+(d) bypass or defeat security controls intended to protect ChitLog data or future licensing features; or
+(e) reverse engineer, decompile, or disassemble proprietary portions of the Software except to the extent that such restriction is prohibited by applicable law.
+
+Nothing in this Agreement restricts rights that you receive directly under an applicable third-party open-source license. In particular, the rights required by the GNU Lesser General Public License version 3 for LGPL-covered Qt/PySide6 components are not restricted by this Agreement.
+
+4. USER DATA AND LOCAL STORAGE
+ChitLog is designed as a local-first personal-finance and small-business worker-payment application. You are responsible for the accuracy of information you enter and for maintaining appropriate backups of your data.
+
+The Software is not a bank, accounting firm, payroll processor, tax adviser, legal adviser, or financial adviser. Calculations and reports are software outputs based on the records you provide and should be reviewed before being relied upon for legal, tax, employment, lending, or accounting decisions.
+
+5. BACKUPS AND RECOVERY
+ChitLog may provide encrypted backup and restore functions. You are responsible for maintaining backup copies appropriate to your needs and for protecting any passwords, operating-system credentials, devices, and storage locations used with the Software.
+
+No backup or recovery system can guarantee that data will never be lost. You should periodically verify that important backups can be restored.
+
+6. ONLINE FEATURES AND THIRD-PARTY SERVICES
+Core ChitLog financial functionality is intended to operate locally. Optional features may connect to third-party services, such as cloud backup, email, update services, licensing services, or other integrations. Your use of those services may also be governed by the third party's terms and privacy practices.
+
+Licensor may add, change, suspend, or discontinue optional online integrations in future versions, provided that doing so does not alter your ownership of your locally stored records.
+
+7. ADVERTISING
+The Software may display advertising or sponsored content in designated areas. Advertisements may contain links that open in your normal system browser after a deliberate user action.
+
+Advertising must not be treated as financial advice or as an endorsement by Licensor. Advertisers and linked websites are responsible for their own products, services, content, terms, and privacy practices.
+
+ChitLog's private financial records, worker records, debts, budgets, notes, credentials, encryption keys, and backups are not licensed to advertisers for ad targeting merely because advertising is displayed in the Software. Any future advertising feature that collects additional information must be described in the applicable privacy notice and handled in accordance with applicable law.
+
+8. THIRD-PARTY AND OPEN-SOURCE SOFTWARE
+The Software includes third-party components that are licensed separately. Their licenses and notices are provided with the Software in THIRD_PARTY_NOTICES.txt and the LICENSES directory.
+
+Where a third-party license grants you rights that differ from or exceed this Agreement, that third-party license governs your use of that component. This Agreement applies only to Licensor's proprietary portions of ChitLog and does not override third-party open-source rights.
+
+9. UPDATES
+Licensor may provide updates, fixes, or new versions. Unless a different license is provided with an update, this Agreement applies to the update. Licensor is not obligated to provide any particular update, feature, or support service.
+
+10. NO WARRANTY
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE SOFTWARE IS PROVIDED "AS IS" AND "AS AVAILABLE" WITHOUT WARRANTIES OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, ACCURACY, NON-INFRINGEMENT, OR UNINTERRUPTED OPERATION.
+
+Nothing in this Agreement excludes any warranty or consumer right that cannot legally be excluded.
+
+11. LIMITATION OF LIABILITY
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, LICENSOR WILL NOT BE LIABLE FOR INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, PUNITIVE, OR CONSEQUENTIAL DAMAGES, OR FOR LOSS OF PROFITS, REVENUE, BUSINESS, GOODWILL, OR DATA, ARISING FROM OR RELATED TO THE SOFTWARE.
+
+Where liability cannot legally be excluded, Licensor's liability will be limited only to the extent permitted by applicable law. Mandatory consumer rights remain unaffected.
+
+12. TERMINATION
+This Agreement remains effective until terminated. Your license terminates if you materially violate this Agreement and fail to remedy the violation where a remedy is legally required. On termination, you must stop using and distributing the proprietary Software, but termination does not remove rights independently granted to you under third-party open-source licenses.
+
+13. COMPLIANCE WITH LAW
+You may use the Software only in compliance with applicable law. You are responsible for determining whether your use of ChitLog, including worker-payment records, reports, backups, and optional online services, satisfies any legal or regulatory requirements that apply to you.
+
+14. SEVERABILITY
+If any provision of this Agreement is found unenforceable, that provision will be enforced to the maximum extent permitted and the remaining provisions will remain in effect.
+
+15. ENTIRE AGREEMENT
+This Agreement, together with the third-party notices that apply to bundled components, is the agreement governing your use of the Software unless Licensor provides a later written license for a newer version.
+
+END OF CHITLOG END-USER LICENSE AGREEMENT

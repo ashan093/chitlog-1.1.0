@@ -1,0 +1,1 @@
+"""ChitLog application package."""
