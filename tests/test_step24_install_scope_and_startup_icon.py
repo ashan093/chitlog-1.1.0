@@ -22,7 +22,7 @@ def test_installer_keeps_eula_and_version_metadata():
     source = (_root() / "packaging/installer/ChitLog.nsi").read_text(encoding="utf-8")
     assert 'MUI_PAGE_LICENSE "${PROJECT_ROOT}\\EULA.txt"' in source
     assert 'MUI_LICENSEPAGE_CHECKBOX' in source
-    assert 'VIAddVersionKey /LANG=1033 "FileVersion" "1.0.0"' in source
+    assert 'VIAddVersionKey /LANG=1033 "FileVersion" "1.1.0"' in source
     assert 'Icon "${PROJECT_ROOT}\\assets\\chit.ico"' in source
 
 

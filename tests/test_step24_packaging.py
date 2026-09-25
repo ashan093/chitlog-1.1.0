@@ -7,9 +7,9 @@ def text(path: str) -> str:
     return (ROOT / path).read_text(encoding="utf-8")
 
 
-def test_release_version_is_1_0_0():
+def test_release_version_is_1_1_0():
     config = text("chitlog/core/config.py")
-    assert 'APP_VERSION = "1.0.0"' in config
+    assert 'from chitlog.core.version import APP_VERSION' in config
 
 
 def test_proprietary_eula_preserves_open_source_rights_and_mentions_ads():
@@ -50,7 +50,7 @@ def test_build_script_gates_on_tests_security_licenses_and_release_verification(
     assert "collect_licenses.py" in script
     assert "--preview-only --smoke-test" in script
     assert "verify_release.py" in script
-    assert "ChitLog-1.0.0-windows-x64-portable.zip" in script
+    assert "ChitLog-1.1.0-windows-x64-portable.zip" in script
 
 
 def test_installer_requires_eula_and_preserves_user_data():

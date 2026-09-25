@@ -1,5 +1,5 @@
 CHITLOG THIRD-PARTY SOFTWARE NOTICES
-Release: ChitLog 1.0.0
+Release: ChitLog 1.1.0
 Copyright © 2026 Ashan Madusanka. All rights reserved in ChitLog's proprietary code and materials.
 
 ChitLog includes third-party software. ChitLog's proprietary EULA does not replace, reduce, or restrict rights granted under the licenses for those third-party components.

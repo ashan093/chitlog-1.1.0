@@ -30,11 +30,10 @@ htmlcov/
 # Build / packaging / release output
 build/
 dist/
-packaging/
 release/
 releases/
-installer/
-installers/
+/installer/
+/installers/
 output/
 artifacts/
 release_staging/

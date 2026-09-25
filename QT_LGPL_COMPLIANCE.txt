@@ -1,5 +1,5 @@
 CHITLOG — QT / PYSIDE6 LGPLv3 COMPLIANCE NOTICE
-Release: ChitLog 1.0.0
+Release: ChitLog 1.1.0
 
 ChitLog uses PySide6 to access QtCore, QtGui, and QtWidgets. These Qt for Python components are distributed in this ChitLog release under the GNU Lesser General Public License version 3 (LGPLv3) route, not under a Qt commercial license.
 

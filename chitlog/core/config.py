@@ -5,7 +5,7 @@ from tempfile import TemporaryFile
 from PySide6.QtCore import QStandardPaths
 
 APP_NAME = "ChitLog"
-APP_VERSION = "1.0.0"
+from chitlog.core.version import APP_VERSION
 ASSETS = Path(__file__).resolve().parents[2] / "assets"
 
 
