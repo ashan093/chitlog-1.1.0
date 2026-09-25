@@ -122,7 +122,17 @@ def main() -> int:
         action="store_true",
         help="Recover the newest validated pre-restore safety backup",
     )
+    parser.add_argument(
+        "--updater-crypto-self-test",
+        action="store_true",
+        help=argparse.SUPPRESS,
+    )
     options = parser.parse_args()
+
+    if options.updater_crypto_self_test:
+        from chitlog.core.update_crypto_selftest import run_update_crypto_self_test
+
+        return run_update_crypto_self_test()
 
     if options.check_database and options.preview_only:
         parser.error("--check-database cannot be combined with --preview-only")
