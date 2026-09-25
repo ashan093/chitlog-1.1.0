@@ -113,18 +113,21 @@ class SettingsPage(QWidget):
     restore_completed = Signal()
     worker_transaction_setting_changed = Signal(bool)
     liability_transaction_setting_changed = Signal(bool)
+    update_preferences_changed = Signal()
 
     def __init__(
         self,
         settings_service: SettingsService,
         notification_service=None,
         backup_service=None,
+        update_preferences_service=None,
         parent=None,
     ):
         super().__init__(parent)
         self.settings_service = settings_service
         self.notification_service = notification_service
         self.backup_service = backup_service
+        self.update_preferences_service = update_preferences_service
 
         self.setObjectName("settingsPage")
         # Settings is intentionally denser than transaction-entry screens.
@@ -232,6 +235,63 @@ class SettingsPage(QWidget):
         appearance_row.addStretch(1)
         appearance_card.body.addLayout(appearance_row)
         root.addWidget(appearance_card)
+
+        # ---------------------------------------------------------------
+        # Updates
+        # ---------------------------------------------------------------
+        updates_card = Card("Updates")
+        self._compact_card(updates_card)
+        updates_card.body.addWidget(
+            text_label(
+                "Secure update checks use signed metadata only. "
+                "Normal ChitLog accounting continues to work offline.",
+                "muted",
+            )
+        )
+
+        update_info = QFormLayout()
+        update_info.setHorizontalSpacing(SPACE["md"])
+        update_info.setVerticalSpacing(SPACE["xs"])
+        self.update_current_version_label = QLabel(APP_VERSION)
+        update_info.addRow("Current version", self.update_current_version_label)
+        self.update_auto_check = QCheckBox("Automatically check for updates")
+        self.update_auto_check.setToolTip(
+            "When enabled, ChitLog may check the configured update service "
+            "at the saved interval. Financial records are never sent."
+        )
+        update_info.addRow("Automatic checks", self.update_auto_check)
+        self.update_channel_combo = QComboBox()
+        self.update_channel_combo.addItem("Stable (recommended)", "stable")
+        self.update_channel_combo.addItem("Beta", "beta")
+        self.update_channel_combo.setMinimumWidth(190)
+        update_info.addRow("Update channel", self.update_channel_combo)
+        self.update_interval_label = QLabel("Every 24 hours")
+        update_info.addRow("Check interval", self.update_interval_label)
+        self.update_auto_install_label = QLabel("Off")
+        self.update_auto_install_label.setToolTip(
+            "Automatic installation is disabled. Updates are not installed "
+            "without an explicit user action."
+        )
+        update_info.addRow("Automatic installation", self.update_auto_install_label)
+        updates_card.body.addLayout(update_info)
+        update_actions = QHBoxLayout()
+        update_actions.setSpacing(SPACE["sm"])
+        self.apply_update_preferences_button = button("Apply", "primary")
+        self.apply_update_preferences_button.setEnabled(False)
+        self.check_updates_button = button("Check for Updates")
+        self.check_updates_button.setEnabled(False)
+        self.check_updates_button.setToolTip(
+            "Manual update checking becomes available when the secure "
+            "update-check runner and update endpoint are connected."
+        )
+        update_actions.addWidget(self.apply_update_preferences_button)
+        update_actions.addWidget(self.check_updates_button)
+        update_actions.addStretch(1)
+        updates_card.body.addLayout(update_actions)
+        self.update_preferences_feedback = text_label("", "muted")
+        self.update_preferences_feedback.setVisible(False)
+        updates_card.body.addWidget(self.update_preferences_feedback)
+        root.addWidget(updates_card)
 
         # ---------------------------------------------------------------
         # Worker payments in Transactions
@@ -485,6 +545,9 @@ class SettingsPage(QWidget):
 
         self.save_currency_button.clicked.connect(self._save_currency)
         self.save_theme_button.clicked.connect(self._save_theme)
+        self.update_auto_check.toggled.connect(self._update_preferences_controls_changed)
+        self.update_channel_combo.currentIndexChanged.connect(self._update_preferences_controls_changed)
+        self.apply_update_preferences_button.clicked.connect(self._apply_update_preferences)
         self.save_credentials_button.clicked.connect(self._save_credentials)
         self.save_recovery_button.clicked.connect(self._save_recovery)
         self.show_secret_fields.toggled.connect(self._toggle_credentials)
@@ -565,6 +628,8 @@ class SettingsPage(QWidget):
         self.liability_payments_in_transactions.blockSignals(False)
         self.apply_liability_expense_button.setEnabled(False)
 
+        self._refresh_update_preferences()
+
         # Question text is not secret, so it can be shown. Stored answer hashes
         # can never be reversed, therefore answer fields intentionally stay blank.
         self.question_1.setText(snapshot.recovery_questions[0])
@@ -575,6 +640,74 @@ class SettingsPage(QWidget):
 
         if self.notifications_page is not None and refresh_notifications:
             self.notifications_page.refresh()
+
+    def _refresh_update_preferences(self) -> None:
+        service = self.update_preferences_service
+        if service is None:
+            self.update_auto_check.setEnabled(False)
+            self.update_channel_combo.setEnabled(False)
+            self.apply_update_preferences_button.setEnabled(False)
+            self.check_updates_button.setEnabled(False)
+            self.update_preferences_feedback.setVisible(False)
+            return
+        snapshot = service.snapshot()
+        self._saved_update_auto_check = bool(snapshot.auto_check_enabled)
+        self._saved_update_channel = str(snapshot.channel)
+        self.update_auto_check.blockSignals(True)
+        self.update_auto_check.setChecked(self._saved_update_auto_check)
+        self.update_auto_check.blockSignals(False)
+        self.update_channel_combo.blockSignals(True)
+        self._set_combo_value(self.update_channel_combo, self._saved_update_channel)
+        self.update_channel_combo.blockSignals(False)
+        hours = snapshot.check_interval_seconds / 3600
+        self.update_interval_label.setText(
+            f"Every {int(hours)} hours" if hours.is_integer()
+            else f"Every {snapshot.check_interval_seconds} seconds"
+        )
+        self.update_auto_install_label.setText(
+            "On" if snapshot.auto_install_enabled else "Off"
+        )
+        self.update_auto_check.setEnabled(True)
+        self.update_channel_combo.setEnabled(True)
+        self.apply_update_preferences_button.setEnabled(False)
+        self.check_updates_button.setEnabled(False)
+
+    def _update_preferences_controls_changed(self, *_args) -> None:
+        if self.update_preferences_service is None:
+            self.apply_update_preferences_button.setEnabled(False)
+            return
+        current_auto = self.update_auto_check.isChecked()
+        current_channel = str(self.update_channel_combo.currentData() or "")
+        changed = (
+            current_auto != bool(getattr(self, "_saved_update_auto_check", current_auto))
+            or current_channel != str(getattr(self, "_saved_update_channel", current_channel))
+        )
+        self.apply_update_preferences_button.setEnabled(changed)
+        if changed:
+            self._show_feedback(
+                self.update_preferences_feedback,
+                "Unsaved update preference change — click Apply to save.",
+            )
+        else:
+            self.update_preferences_feedback.setVisible(False)
+
+    def _apply_update_preferences(self) -> None:
+        service = self.update_preferences_service
+        if service is None:
+            return
+        saved = service.configure(
+            auto_check_enabled=self.update_auto_check.isChecked(),
+            channel=str(self.update_channel_combo.currentData() or ""),
+        )
+        self._saved_update_auto_check = bool(saved.auto_check_enabled)
+        self._saved_update_channel = str(saved.channel)
+        self.apply_update_preferences_button.setEnabled(False)
+        state = "enabled" if saved.auto_check_enabled else "disabled"
+        self._show_feedback(
+            self.update_preferences_feedback,
+            f"Update preferences saved. Automatic checks are {state}; channel: {saved.channel}.",
+        )
+        self.update_preferences_changed.emit()
 
     def _worker_payments_transaction_toggled(self, checked: bool) -> None:
         saved = bool(getattr(self, "_saved_worker_payments_in_transactions", checked))

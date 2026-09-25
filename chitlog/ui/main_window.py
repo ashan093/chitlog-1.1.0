@@ -245,6 +245,7 @@ class MainWindow(Background):
         notification_service=None,
         backup_service=None,
         settings_service=None,
+        update_preferences_service=None,
         lazy_pages: bool = False,
         worker_service=None,
         currency_code: str = "LKR",
@@ -264,6 +265,7 @@ class MainWindow(Background):
         self.notification_service = notification_service
         self.backup_service = backup_service
         self.settings_service = settings_service
+        self.update_preferences_service = update_preferences_service
         self.lazy_pages = bool(lazy_pages)
         self._lazy_unloaded_pages: set[str] = set()
         self._freshly_built_pages: set[str] = set()
@@ -613,6 +615,7 @@ class MainWindow(Background):
                 self.settings_service,
                 notification_service=self.notification_service,
                 backup_service=self.backup_service,
+                update_preferences_service=self.update_preferences_service,
             )
             page.theme_requested.connect(self.select_theme)
             page.worker_transaction_setting_changed.connect(
@@ -1053,6 +1056,7 @@ def create_window(
     notification_service=None,
     backup_service=None,
     settings_service=None,
+    update_preferences_service=None,
     lazy_pages: bool = False,
     worker_service=None,
     currency_code: str = "LKR",
@@ -1073,6 +1077,7 @@ def create_window(
         notification_service=notification_service,
         backup_service=backup_service,
         settings_service=settings_service,
+        update_preferences_service=update_preferences_service,
         lazy_pages=lazy_pages,
         worker_service=worker_service,
         currency_code=currency_code,

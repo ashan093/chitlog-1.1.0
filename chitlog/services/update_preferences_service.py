@@ -77,6 +77,23 @@ class UpdatePreferencesService:
         )
         return self.snapshot()
 
+    def configure(
+        self,
+        *,
+        auto_check_enabled: bool,
+        channel: str,
+    ) -> UpdatePreferencesSnapshot:
+        """Save the user-facing update preferences in one transaction."""
+
+        cleaned = (channel or "").strip().lower()
+        current = self.snapshot()
+        return self._save(
+            auto_check_enabled=bool(auto_check_enabled),
+            auto_install_enabled=current.auto_install_enabled,
+            channel=cleaned,
+            check_interval_seconds=current.check_interval_seconds,
+        )
+
     def set_auto_check_enabled(
         self,
         enabled: bool,

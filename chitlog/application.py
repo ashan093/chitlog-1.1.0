@@ -19,6 +19,7 @@ from chitlog.data.notification_repository import NotificationRepository
 from chitlog.data.report_repository import ReportRepository
 from chitlog.data.setup_repository import SetupRepository
 from chitlog.data.settings_repository import SettingsRepository
+from chitlog.data.update_preferences_repository import UpdatePreferencesRepository
 from chitlog.data.transaction_repository import TransactionRepository
 from chitlog.data.worker_repository import WorkerRepository
 from chitlog.data.worker_payment_repository import WorkerPaymentRepository
@@ -34,6 +35,7 @@ from chitlog.services.report_service import ReportService
 from chitlog.services.dashboard_service import DashboardService
 from chitlog.services.setup_service import SetupService
 from chitlog.services.settings_service import SettingsService
+from chitlog.services.update_preferences_service import UpdatePreferencesService
 from chitlog.services.transaction_service import TransactionService
 from chitlog.services.worker_service import WorkerService
 from chitlog.services.worker_payment_service import WorkerPaymentService
@@ -154,6 +156,7 @@ def main() -> int:
     budget_service = None
     backup_service = None
     settings_service = None
+    update_preferences_service = None
     liability_service = None
     report_service = None
     notification_service = None
@@ -252,6 +255,9 @@ def main() -> int:
             setup_repository = SetupRepository(database)
             setup_service = SetupService(setup_repository, appearance)
             settings_service = SettingsService(SettingsRepository(database))
+            update_preferences_service = UpdatePreferencesService(
+                UpdatePreferencesRepository(database)
+            )
 
             if not setup_service.is_setup_complete():
                 _apply_chitlog_window_icon(ASSETS)
@@ -350,6 +356,7 @@ def main() -> int:
             notification_service=notification_service,
             backup_service=backup_service,
             settings_service=settings_service,
+            update_preferences_service=update_preferences_service,
             lazy_pages=True,
             worker_service=worker_service,
             worker_work_service=worker_work_service,
