@@ -297,6 +297,44 @@ def audit_project(project_root: str | Path | None = None) -> list[AuditIssue]:
                         )
                     )
 
+    # NARROW UPDATE TRANSPORT AUDIT
+    # http.client is broad-capability, so permit it only in the single
+    # updater transport file whose behavior is separately tested.
+    approved_http_client_path = "chitlog/core/update_transport.py"
+    for source_path in package.rglob("*.py"):
+        try:
+            source_text = source_path.read_text(encoding="utf-8")
+            syntax_tree = ast.parse(source_text, filename=str(source_path))
+        except (OSError, UnicodeError, SyntaxError):
+            continue
+
+        relative_path = source_path.relative_to(root).as_posix()
+        for syntax_node in ast.walk(syntax_tree):
+            imports_http_client = False
+
+            if isinstance(syntax_node, ast.Import):
+                imports_http_client = any(
+                    alias.name == "http.client"
+                    for alias in syntax_node.names
+                )
+            elif isinstance(syntax_node, ast.ImportFrom):
+                imports_http_client = syntax_node.module == "http.client"
+
+            if (
+                imports_http_client
+                and relative_path != approved_http_client_path
+            ):
+                issues.append(
+                    AuditIssue(
+                        "network_or_unsafe_import",
+                        relative_path,
+                        getattr(syntax_node, "lineno", 0),
+                        "http.client is permitted only in the restricted "
+                        "ChitLog updater transport",
+                    )
+                )
+                break
+
     return sorted(set(issues))
 
 

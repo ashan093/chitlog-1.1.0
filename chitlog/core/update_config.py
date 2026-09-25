@@ -14,6 +14,7 @@ from chitlog.core.version import APP_UPDATE_CHANNEL
 DEFAULT_MANIFEST_URL: str | None = None
 DEFAULT_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 10
+DEFAULT_MAX_MANIFEST_BYTES = 256 * 1024
 DEFAULT_MAX_INSTALLER_BYTES = 300 * 1024 * 1024
 ALLOWED_UPDATE_CHANNELS = frozenset({"stable", "beta"})
 
@@ -26,6 +27,7 @@ class UpdatePolicy:
     channel: str = APP_UPDATE_CHANNEL
     check_interval_seconds: int = DEFAULT_CHECK_INTERVAL_SECONDS
     request_timeout_seconds: int = DEFAULT_REQUEST_TIMEOUT_SECONDS
+    max_manifest_bytes: int = DEFAULT_MAX_MANIFEST_BYTES
     max_installer_bytes: int = DEFAULT_MAX_INSTALLER_BYTES
 
     def __post_init__(self) -> None:
@@ -36,6 +38,8 @@ class UpdatePolicy:
             raise ValueError("Update check interval must be positive.")
         if self.request_timeout_seconds <= 0:
             raise ValueError("Update request timeout must be positive.")
+        if self.max_manifest_bytes <= 0:
+            raise ValueError("Maximum manifest size must be positive.")
         if self.max_installer_bytes <= 0:
             raise ValueError("Maximum installer size must be positive.")
 
