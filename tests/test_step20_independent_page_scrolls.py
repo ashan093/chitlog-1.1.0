@@ -33,16 +33,12 @@ def test_every_sidebar_page_has_its_own_scroll_viewport_and_height_threshold():
     assert "self.page_hosts: dict[str, QWidget]" not in source
 
 
-def test_workers_fixed_tabs_remain_outside_page_scrolls():
+def test_workers_no_longer_adds_fixed_child_tabs_to_shell():
     project = Path(__file__).resolve().parents[1]
-    source = (
-        project / "chitlog/ui/main_window.py"
-    ).read_text(encoding="utf-8")
-
-    worker_tabs = source.index("main_layout.addWidget(self.worker_subtabs)")
-    page_stack = source.index("main_layout.addWidget(self.pages, 1)")
-    assert worker_tabs < page_stack
-
+    source = (project / "chitlog/ui/main_window.py").read_text(encoding="utf-8")
+    assert "main_layout.addWidget(self.worker_subtabs)" not in source
+    assert "self.worker_subtabs.addTab" not in source
+    assert "Workers is now a single-page workspace" in source
 
 def test_scroll_alias_follows_active_page():
     project = Path(__file__).resolve().parents[1]

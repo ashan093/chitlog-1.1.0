@@ -500,31 +500,11 @@ class MainWindow(Background):
         if self.liability_service is not None:
             self._set_liability_badge(self.liability_service.totals().open_count)
 
-        # Worker child navigation belongs to the non-scrolling shell.  The
-        # Workers page owns three child pages, but its internal tab bar is
-        # hidden while this fixed bar mirrors/switches the same indices. This
-        # keeps Worker Profiles / Work Records / Payments & Advances visible
-        # even when the worker page content is scrolled far down.
+        # Workers is now a single-page workspace. Keep a hidden compatibility
+        # object for older helpers, but do not expose child navigation.
         self.worker_subtabs = QTabBar()
         self.worker_subtabs.setObjectName("workerFixedTabs")
-        # Four worker child tabs must stay inside the non-scrolling shell.
-        # Let them share available width and elide only as a last resort rather
-        # than allowing the tab bar itself to extend beyond the viewport.
-        self.worker_subtabs.setExpanding(True)
-        self.worker_subtabs.setDrawBase(False)
-        self.worker_subtabs.setMovable(False)
-        self.worker_subtabs.setUsesScrollButtons(False)
-        self.worker_subtabs.setElideMode(Qt.TextElideMode.ElideRight)
-        self.worker_subtabs.setMinimumWidth(0)
-        self.worker_subtabs.setSizePolicy(
-            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed
-        )
-        self.worker_subtabs.addTab("Worker Profiles")
-        self.worker_subtabs.addTab("Work Records")
-        self.worker_subtabs.addTab("Payments & Advances")
-        self.worker_subtabs.addTab("Payroll Summary")
         self.worker_subtabs.hide()
-        main_layout.addWidget(self.worker_subtabs)
 
         worker_page = self.page_widgets.get("Workers")
         if isinstance(worker_page, WorkersPage):
@@ -584,11 +564,15 @@ class MainWindow(Background):
             )
 
         if name == "Transactions" and self.transaction_service is not None:
-            return TransactionsPage(
+            page = TransactionsPage(
                 self.transaction_service,
                 self.currency_code,
                 self.currency_symbol,
+                worker_payment_service=self.worker_payment_service,
+                liability_service=self.liability_service,
             )
+            page.linked_payment_changed.connect(self._linked_payment_source_changed)
+            return page
 
         if name == "Budget" and self.budget_service is not None:
             return BudgetPage(
@@ -604,6 +588,7 @@ class MainWindow(Background):
                 self.currency_symbol,
             )
             page.open_count_changed.connect(self._set_liability_badge)
+            page.linked_expenses_changed.connect(self._linked_expenses_changed)
             return page
 
         if name == "Workers" and self.worker_service is not None:
@@ -630,6 +615,12 @@ class MainWindow(Background):
                 backup_service=self.backup_service,
             )
             page.theme_requested.connect(self.select_theme)
+            page.worker_transaction_setting_changed.connect(
+                self._worker_transaction_setting_changed
+            )
+            page.liability_transaction_setting_changed.connect(
+                self._linked_expenses_changed
+            )
             if self.notification_controller is not None:
                 page.notification_settings_changed.connect(
                     self.notification_controller.reschedule
@@ -661,11 +652,9 @@ class MainWindow(Background):
         return create_placeholder_page(name)
 
     def _wire_worker_page(self, worker_page: WorkersPage) -> None:
-        """Connect the fixed shell tabs once a real WorkersPage exists."""
-        worker_page.tabs.tabBar().hide()
-        self.worker_subtabs.setCurrentIndex(worker_page.tabs.currentIndex())
-        self.worker_subtabs.currentChanged.connect(worker_page.tabs.setCurrentIndex)
-        worker_page.tabs.currentChanged.connect(self._worker_child_tab_changed)
+        """Wire the single Workers page to finance views that mirror worker payments."""
+        self.worker_subtabs.hide()
+        worker_page.linked_expenses_changed.connect(self._worker_transaction_setting_changed)
 
     def _load_lazy_page(self, name: str) -> None:
         """Build a deferred page on first use and install it into its own scroll area."""
@@ -758,6 +747,38 @@ class MainWindow(Background):
                 return name
         return ""
 
+    def _linked_expenses_changed(self, _enabled: bool | None = None) -> None:
+        """Refresh built finance views after linked expense records change."""
+        for name in ("Transactions", "Dashboard", "Reports"):
+            if name in self._lazy_unloaded_pages:
+                continue
+            page = self.page_widgets.get(name)
+            if page is not None and hasattr(page, "refresh"):
+                page.refresh()
+
+    def _worker_transaction_setting_changed(self, _enabled: bool | None = None) -> None:
+        """Compatibility alias retained for older tests/helpers."""
+        self._linked_expenses_changed(_enabled)
+
+    def _linked_payment_source_changed(self, source: str) -> None:
+        """Refresh native payment views after deletion/undo from Transactions."""
+        source_page = "Workers" if source == "worker_payment" else (
+            "Liabilities" if source == "liability_payment" else None
+        )
+        if source == "liability_payment" and self.liability_service is not None:
+            # A payment deletion can change Paid -> Open even when Liabilities
+            # has not been lazily opened yet, so keep the sidebar badge current.
+            self._set_liability_badge(self.liability_service.totals().open_count)
+        names = ["Dashboard", "Reports"]
+        if source_page is not None:
+            names.append(source_page)
+        for name in names:
+            if name in self._lazy_unloaded_pages:
+                continue
+            page = self.page_widgets.get(name)
+            if page is not None and hasattr(page, "refresh"):
+                page.refresh()
+
     def _set_liability_badge(self, count: int) -> None:
         nav = self.nav_buttons.get("Liabilities")
         if isinstance(nav, NavButton):
@@ -771,34 +792,13 @@ class MainWindow(Background):
         scroll.verticalScrollBar().setValue(0)
         scroll.horizontalScrollBar().setValue(0)
 
-    def _sync_worker_subtab(self, index: int) -> None:
-        """Keep the fixed Workers child-tab bar synchronized with the page."""
-        if self.worker_subtabs.currentIndex() != index:
-            self.worker_subtabs.setCurrentIndex(index)
+    def _sync_worker_subtab(self, index: int = 0) -> None:
+        """Compatibility no-op: Workers is a single page."""
+        self.worker_subtabs.hide()
 
-    def _worker_child_tab_changed(self, index: int) -> None:
-        """Synchronize Workers tabs and always open the child tab at the top."""
-        self._sync_worker_subtab(index)
-
-        scroll = self.page_scrolls.get("Workers")
-        if scroll is None:
-            return
-
-        # Reset immediately so switching Profiles / Records / Payments /
-        # Payroll never inherits the previous child tab's page position.
-        scroll.verticalScrollBar().setValue(0)
-        scroll.horizontalScrollBar().setValue(0)
-
-        # The newly selected QTabWidget page can change the Workers content
-        # height after Qt completes its layout pass. Reset once more afterward
-        # so the final visible position remains at the top-left.
-        QTimer.singleShot(
-            0,
-            lambda worker_scroll=scroll: (
-                worker_scroll.verticalScrollBar().setValue(0),
-                worker_scroll.horizontalScrollBar().setValue(0),
-            ),
-        )
+    def _worker_child_tab_changed(self, index: int = 0) -> None:
+        """Compatibility no-op: Workers is a single page."""
+        self.worker_subtabs.hide()
 
     def navigate(self, name: str) -> None:
         if name not in self.page_widgets:
@@ -822,12 +822,8 @@ class MainWindow(Background):
         self.page_title.setText(name)
         self.nav_buttons[name].setChecked(True)
 
-        is_workers_page = name == "Workers" and isinstance(
-            self.page_widgets[name], WorkersPage
-        )
-        self.worker_subtabs.setVisible(is_workers_page)
-        if is_workers_page:
-            self._sync_worker_subtab(self.page_widgets[name].tabs.currentIndex())
+        # Workers is a single-page workspace; no child navigation is shown.
+        self.worker_subtabs.hide()
 
         if name == "Dashboard" and self.dashboard_service is not None:
             dashboard = self.page_widgets[name]
@@ -835,6 +831,9 @@ class MainWindow(Background):
                 dashboard.refresh()
             self.feedback.setText("Dashboard refreshed from your saved transaction records.")
         elif name == "Transactions" and self.transaction_service is not None:
+            transactions = self.page_widgets[name]
+            if not freshly_built and hasattr(transactions, "refresh"):
+                transactions.refresh()
             self.feedback.setText("Transactions opened. Income, expenses, categories, delete, and undo are active.")
         elif name == "Budget" and self.budget_service is not None:
             budget = self.page_widgets[name]
@@ -981,27 +980,7 @@ class MainWindow(Background):
             width = self.main_panel.width()
         compact = width < 900
 
-        # The fixed worker child navigation is part of the shell rather than
-        # the scrolling page. Give it a denser themed style as the content
-        # viewport narrows so every child tab remains reachable.
-        tabs_compact = width < 920
-        tabs_narrow = width < 650
-        tab_state = (tabs_compact, tabs_narrow)
-        if getattr(self, "_worker_tabs_state", None) != tab_state:
-            self._worker_tabs_state = tab_state
-            self.worker_subtabs.setProperty("responsiveCompact", tabs_compact)
-            labels = (
-                ("Profiles", "Records", "Payments", "Payroll")
-                if tabs_narrow
-                else ("Worker Profiles", "Work Records", "Payments & Advances", "Payroll Summary")
-            )
-            full_labels = ("Worker Profiles", "Work Records", "Payments & Advances", "Payroll Summary")
-            for index, (label, full_label) in enumerate(zip(labels, full_labels)):
-                self.worker_subtabs.setTabText(index, label)
-                self.worker_subtabs.setTabToolTip(index, full_label)
-            self.worker_subtabs.style().unpolish(self.worker_subtabs)
-            self.worker_subtabs.style().polish(self.worker_subtabs)
-            self.worker_subtabs.updateGeometry()
+        self.worker_subtabs.hide()
 
         if getattr(self, "_buttons_compact", None) == compact:
             return
@@ -1024,15 +1003,26 @@ class MainWindow(Background):
             raise ValueError("Unsupported theme")
         self.theme_name = name
         self.setStyleSheet(stylesheet(name))
+        # Worker activity rows use subtle palette-derived item brushes in addition
+        # to QSS. Rebuild that page after a theme change so Work/Payment tints
+        # always match the active Light/Dark/System palette.
+        if "Workers" not in getattr(self, "_lazy_unloaded_pages", set()):
+            worker_page = getattr(self, "page_widgets", {}).get("Workers")
+            if isinstance(worker_page, WorkersPage):
+                QTimer.singleShot(0, worker_page.refresh)
         for button_name, theme_button in self.theme_buttons.items():
             theme_button.setChecked(button_name == name)
         self.update()
 
-        # setStyleSheet() replaces the Step 23 overlay. Restore it explicitly
-        # instead of watching every generic Qt StyleChange event, which caused
-        # expensive repeated full-window repolish cycles.
+        # setStyleSheet() replaces the Step 23 overlay. Restore and repolish
+        # synchronously so every already-created summary card receives the new
+        # effective Light/Dark/System theme before this click returns. A queued
+        # layout refresh is still useful after Qt finishes recalculating sizes.
         if bool(self.property("step23PolishApplied")):
-            QTimer.singleShot(0, lambda: apply_step23_polish(self))
+            apply_step23_polish(self)
+            controller = getattr(self, "_step23_controller", None)
+            if controller is not None:
+                QTimer.singleShot(0, controller.schedule_summary_refresh)
 
     def select_theme(self, name: str) -> None:
         self.apply_theme(name)

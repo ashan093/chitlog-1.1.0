@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QGuiApplication, QPalette
 
+from chitlog.core.config import ASSETS
+
 SCOOTER = "#2F9D94"
 ALABASTER = "#F7F6F2"
 HEATHER = "#BCC5CC"
@@ -89,7 +91,10 @@ def stylesheet(name: str) -> str:
     Interactive controls keep the same border width in normal/focus states so
     focusing or clicking them cannot change layout size hints.
     """
-    t = THEMES[resolve_theme(name)]
+    resolved_name = resolve_theme(name)
+    t = THEMES[resolved_name]
+    checkmark_path = (ASSETS / "checkbox_check.png").resolve().as_posix()
+    payroll_checkbox_border = ALABASTER if resolved_name == "dark" else BLUE_LAGOON
 
     return f'''
     QWidget {{
@@ -206,7 +211,7 @@ def stylesheet(name: str) -> str:
     }}
     QPushButton:focus {{ border-color: {SCOOTER}; }}
 
-    QLineEdit, QComboBox, QDateEdit, QTimeEdit {{
+    QLineEdit, QComboBox, QDateEdit, QTimeEdit, QTextEdit, QPlainTextEdit {{
         background: {t.field};
         color: {t.text};
         border: 2px solid {t.border};
@@ -217,8 +222,8 @@ def stylesheet(name: str) -> str:
         selection-background-color: {BLUE_LAGOON};
         selection-color: white;
     }}
-    QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QTimeEdit:focus {{ border-color: {SCOOTER}; }}
-    QLineEdit:disabled {{
+    QLineEdit:focus, QComboBox:focus, QDateEdit:focus, QTimeEdit:focus, QTextEdit:focus, QPlainTextEdit:focus {{ border-color: {SCOOTER}; }}
+    QLineEdit:disabled, QTextEdit:disabled, QPlainTextEdit:disabled {{
         background: {t.background};
         color: {t.muted};
     }}
@@ -249,6 +254,28 @@ def stylesheet(name: str) -> str:
         selection-background-color: {t.selected};
         selection-color: {t.text};
         border: 1px solid {t.border};
+    }}
+
+    QMenu {{
+        background: {t.surface};
+        color: {t.text};
+        border: 1px solid {t.border};
+        padding: 5px;
+    }}
+    QMenu::item {{
+        color: {t.text};
+        background: transparent;
+        padding: 7px 18px;
+        border-radius: 6px;
+    }}
+    QMenu::item:selected {{
+        color: {t.text};
+        background: {t.selected};
+    }}
+    QMenu::separator {{
+        height: 1px;
+        background: {t.border};
+        margin: 4px 8px;
     }}
 
     QTabWidget#workerTabs::pane {{
@@ -361,9 +388,32 @@ def stylesheet(name: str) -> str:
     }}
     QRadioButton::indicator {{ border-radius: 9px; }}
     QCheckBox::indicator {{ border-radius: 4px; }}
-    QRadioButton::indicator:checked, QCheckBox::indicator:checked {{
+    QRadioButton::indicator:checked {{
         background: {BLUE_LAGOON};
         border: 3px solid {SCOOTER};
+    }}
+    QCheckBox::indicator:checked {{
+        background: {BLUE_LAGOON};
+        border: 2px solid {SCOOTER};
+        image: url("{checkmark_path}");
+    }}
+
+    /* Salary-slip selection uses item-view checkboxes rather than QCheckBox.
+       Keep the empty box clearly visible in dark mode without overriding the
+       platform's existing white checked tick. */
+    QTableWidget#workersPayrollTable::indicator {{
+        width: 16px;
+        height: 16px;
+        border-radius: 3px;
+    }}
+    QTableWidget#workersPayrollTable::indicator:unchecked {{
+        border: 2px solid {payroll_checkbox_border};
+        background: {t.field};
+    }}
+    QTableWidget#workersPayrollTable::indicator:checked {{
+        border: 2px solid {payroll_checkbox_border};
+        background: {BLUE_LAGOON};
+        image: url("{checkmark_path}");
     }}
 
     QToolButton {{
@@ -567,8 +617,32 @@ def stylesheet(name: str) -> str:
         background: {t.field};
         color: {t.text};
         border: 1px solid {t.border};
+        border-radius: 6px;
+        padding: 3px 27px 3px 7px;
+        min-height: 22px;
         selection-background-color: {BLUE_LAGOON};
         selection-color: white;
+    }}
+    QCalendarWidget QSpinBox::up-button,
+    QCalendarWidget QSpinBox::down-button {{
+        subcontrol-origin: border;
+        width: 22px;
+        background: {t.surface};
+        border-left: 1px solid {t.border};
+    }}
+    QCalendarWidget QSpinBox::up-button {{
+        subcontrol-position: top right;
+        border-top-right-radius: 5px;
+        border-bottom: 1px solid {t.border};
+    }}
+    QCalendarWidget QSpinBox::down-button {{
+        subcontrol-position: bottom right;
+        border-bottom-right-radius: 5px;
+    }}
+    QCalendarWidget QSpinBox::up-button:hover,
+    QCalendarWidget QSpinBox::down-button:hover {{
+        background: {t.selected};
+        border-left-color: {SCOOTER};
     }}
     QCalendarWidget QAbstractItemView:enabled {{
         background: {t.surface};
@@ -576,6 +650,10 @@ def stylesheet(name: str) -> str:
         selection-background-color: {SCOOTER};
         selection-color: white;
         outline: 0;
+    }}
+    QCalendarWidget QAbstractItemView:item:hover {{
+        background: {t.selected};
+        color: {t.text};
     }}
     QCalendarWidget QAbstractItemView:disabled {{
         color: {t.muted};

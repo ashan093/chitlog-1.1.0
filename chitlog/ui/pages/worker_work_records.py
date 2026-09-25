@@ -31,6 +31,7 @@ from chitlog.services.worker_work_service import (
 )
 from chitlog.ui.theme import SPACE, stylesheet
 from chitlog.ui.widgets import button, text_label
+from chitlog.ui.date_picker import configure_date_edit
 
 
 WORK_TYPE_LABELS = {
@@ -151,10 +152,11 @@ class WorkDayDialog(QDialog):
         if suggested > QDate.currentDate():
             suggested = QDate.currentDate()
         self.work_date = QDateEdit(suggested)
-        self.work_date.setCalendarPopup(True)
-        self.work_date.setDisplayFormat("yyyy-MM-dd")
-        self.work_date.setMinimumDate(minimum)
-        self.work_date.setMaximumDate(QDate.currentDate())
+        configure_date_edit(
+            self.work_date,
+            minimum=minimum,
+            maximum=QDate.currentDate(),
+        )
         form.addRow("Worked date", self.work_date)
 
         self.duration_combo = QComboBox()
@@ -182,6 +184,14 @@ class WorkDayDialog(QDialog):
         self.note_edit.setMaxLength(500)
         form.addRow("Note", self.note_edit)
         root.addLayout(form)
+        root.addWidget(
+            text_label(
+                f"Available dates: {minimum.toString('yyyy-MM-dd')} through "
+                f"{QDate.currentDate().toString('yyyy-MM-dd')}. Future dates are disabled. "
+                "If earlier work is needed, edit the worker's Date Added first.",
+                "muted",
+            )
+        )
 
         if worker.payment_method == "daily":
             hint = (
@@ -350,16 +360,20 @@ class WorkRecordDialog(QDialog):
             suggested = minimum
 
         self.start_date = QDateEdit(suggested)
-        self.start_date.setCalendarPopup(True)
-        self.start_date.setDisplayFormat("yyyy-MM-dd")
-        self.start_date.setMinimumDate(minimum)
+        configure_date_edit(
+            self.start_date,
+            minimum=minimum,
+            maximum=QDate.currentDate(),
+        )
         self.start_label = QLabel("Date")
         form.addRow(self.start_label, self.start_date)
 
         self.end_date = QDateEdit(suggested)
-        self.end_date.setCalendarPopup(True)
-        self.end_date.setDisplayFormat("yyyy-MM-dd")
-        self.end_date.setMinimumDate(minimum)
+        configure_date_edit(
+            self.end_date,
+            minimum=minimum,
+            maximum=QDate.currentDate(),
+        )
         self.end_label = QLabel("End date")
         form.addRow(self.end_label, self.end_date)
 
@@ -376,6 +390,13 @@ class WorkRecordDialog(QDialog):
         self.description_edit.setMaxLength(500)
         form.addRow("Description", self.description_edit)
         root.addLayout(form)
+        root.addWidget(
+            text_label(
+                f"Available dates begin on {minimum.toString('yyyy-MM-dd')} (worker Date Added). "
+                f"Future dates after {QDate.currentDate().toString('yyyy-MM-dd')} are disabled.",
+                "muted",
+            )
+        )
 
         buttons = QDialogButtonBox()
         self.save_button = buttons.addButton("Save Earning", QDialogButtonBox.ButtonRole.AcceptRole)

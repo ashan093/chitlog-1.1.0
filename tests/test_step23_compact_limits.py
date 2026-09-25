@@ -59,7 +59,11 @@ def test_step23_summary_highlights_use_chitlog_brand_family():
     assert "border-top: 3px solid #2F9D94" in source
     assert "border-top-color: #025F67" in source
     assert "border-top-color: #063154" in source
-    assert 'QFrame[step23Summary="true"] QLabel[role="metric"] { color: #025F67; }' in source
+    # Summary metric color is now explicitly theme-scoped so Light/Dark/System
+    # switching cannot leave one global metric color stuck across themes.
+    assert 'QFrame[step23Summary="true"][step23Theme="light"] QLabel[role="metric"] { color: #025F67; }' in source
+    assert 'QFrame[step23Summary="true"][step23Theme="dark"] QLabel[role="metric"] { color: #A6F2E9; font-weight: 700; }' in source
+    assert 'QFrame[step23Summary="true"][step23Theme="dark"] QLabel[role="heading"] { color: #F7F6F2; font-weight: 700; }' in source
     assert "#D97706" not in source
     assert "#7C3AED" not in source
 

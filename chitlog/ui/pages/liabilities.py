@@ -49,41 +49,61 @@ def _apply_dialog_theme(dialog: QDialog, parent) -> None:
     dialog.setStyleSheet(stylesheet(_theme_name_from_widget(parent)))
 
 
-def _confirm_delete(parent, liability_name: str) -> bool:
-    """Theme-safe confirmation for deleting a liability from normal records."""
+def _confirm_delete(parent, liability_name: str) -> str | None:
+    """Ask how linked Transaction expense history should be handled."""
     dialog = QDialog(parent)
     dialog.setWindowTitle("Delete Liability")
     dialog.setModal(True)
     _apply_dialog_theme(dialog, parent)
-    dialog.setMinimumWidth(500)
+    dialog.setMinimumWidth(590)
 
     layout = QVBoxLayout(dialog)
     layout.setContentsMargins(SPACE["lg"], SPACE["lg"], SPACE["lg"], SPACE["lg"])
     layout.setSpacing(SPACE["md"])
     layout.addWidget(text_label("Delete liability?", "heading"))
-    layout.addWidget(
-        text_label(
-            f'“{liability_name}” will be removed from the Liabilities list and totals. '
-            "Recorded payment history will be retained internally for data integrity. "
-            "You can undo this deletion for 10 seconds."
-        )
+    message = text_label(
+        f'“{liability_name}” will be removed from the Liabilities list and totals. '
+        "Choose what should happen to the linked liability-payment expenses in Transactions. "
+        "The liability and payment records are retained internally so this deletion can be undone for 10 seconds."
     )
+    message.setWordWrap(True)
+    layout.addWidget(message)
 
+    keep_note = text_label(
+        "Keep Transaction History — linked payment expenses stay visible in Transactions.",
+        "muted",
+    )
+    keep_note.setWordWrap(True)
+    layout.addWidget(keep_note)
+    delete_note = text_label(
+        "Delete Transaction History — linked payment expenses are removed from normal Transaction history.",
+        "muted",
+    )
+    delete_note.setWordWrap(True)
+    layout.addWidget(delete_note)
+
+    choice = {"value": None}
     actions = QHBoxLayout()
     actions.addStretch(1)
     cancel = button("Cancel")
-    # Confirmation is intentionally destructive/red. The normal page-level
-    # Delete Liability button stays on-brand; red is reserved for the final
-    # confirmation action so the destructive step is unmistakable.
-    delete = button("Delete Liability", "danger")
+    keep = button("Keep Transaction History")
+    delete_history = button("Delete Transaction History", "danger")
     actions.addWidget(cancel)
-    actions.addWidget(delete)
+    actions.addWidget(keep)
+    actions.addWidget(delete_history)
     layout.addLayout(actions)
 
+    def choose(value: str) -> None:
+        choice["value"] = value
+        dialog.accept()
+
     cancel.clicked.connect(dialog.reject)
-    delete.clicked.connect(dialog.accept)
+    keep.clicked.connect(lambda: choose("keep"))
+    delete_history.clicked.connect(lambda: choose("delete"))
     cancel.setDefault(True)
-    return dialog.exec() == QDialog.DialogCode.Accepted
+    if dialog.exec() != QDialog.DialogCode.Accepted:
+        return None
+    return str(choice["value"]) if choice["value"] else None
 
 
 class InlineMessage(QLabel):
@@ -247,15 +267,17 @@ class LiabilityPaymentDialog(QDialog):
         liability_id: int,
         currency_code: str,
         currency_symbol: str,
+        payment_id: int | None = None,
         parent=None,
     ):
         super().__init__(parent)
         self.service = service
         self.liability_id = liability_id
+        self.payment_id = payment_id
         self.currency_code = currency_code
         self.currency_symbol = currency_symbol
         summary = service.get_summary(liability_id)
-        self.setWindowTitle("Record Liability Payment")
+        self.setWindowTitle("Edit Liability Payment" if payment_id is not None else "Record Liability Payment")
         self.setModal(True)
         _apply_dialog_theme(self, parent)
         self.resize(500, 390)
@@ -263,7 +285,7 @@ class LiabilityPaymentDialog(QDialog):
         root = QVBoxLayout(self)
         root.setContentsMargins(SPACE["lg"], SPACE["lg"], SPACE["lg"], SPACE["lg"])
         root.setSpacing(SPACE["md"])
-        root.addWidget(text_label("Record payment", "pageTitle"))
+        root.addWidget(text_label("Edit payment" if payment_id is not None else "Record payment", "pageTitle"))
         if summary is not None:
             root.addWidget(text_label(summary.name, "heading"))
             root.addWidget(
@@ -303,7 +325,10 @@ class LiabilityPaymentDialog(QDialog):
         root.addLayout(form)
 
         buttons = QDialogButtonBox()
-        save = buttons.addButton("Save Payment", QDialogButtonBox.ButtonRole.AcceptRole)
+        save = buttons.addButton(
+            "Save Changes" if payment_id is not None else "Save Payment",
+            QDialogButtonBox.ButtonRole.AcceptRole,
+        )
         save.setProperty("role", "primary")
         buttons.addButton("Cancel", QDialogButtonBox.ButtonRole.RejectRole)
         buttons.accepted.connect(self.save)
@@ -311,18 +336,34 @@ class LiabilityPaymentDialog(QDialog):
         root.addWidget(buttons)
 
         self.amount_edit.textChanged.connect(lambda *_: self.error.clear_message())
+        if payment_id is not None:
+            self._load_existing(payment_id)
+
+    def _load_existing(self, payment_id: int) -> None:
+        payment = self.service.get_payment(payment_id)
+        if payment is None or payment.liability_id != self.liability_id:
+            self.error.show_message("This liability payment no longer exists.")
+            return
+        payment_date = QDate.fromString(payment.payment_date, "yyyy-MM-dd")
+        if payment_date.isValid():
+            self.payment_date.setDate(payment_date)
+        self.amount_edit.setText(amount_text_from_minor(payment.amount_minor, self.currency_code))
+        self.note_edit.setText(payment.note)
+
+    def _input(self) -> LiabilityPaymentInput:
+        return LiabilityPaymentInput(
+            payment_date=self.payment_date.date().toString("yyyy-MM-dd"),
+            amount=self.amount_edit.text(),
+            note=self.note_edit.text(),
+        )
 
     def save(self) -> None:
         self.error.clear_message()
         try:
-            self.service.add_payment(
-                self.liability_id,
-                LiabilityPaymentInput(
-                    payment_date=self.payment_date.date().toString("yyyy-MM-dd"),
-                    amount=self.amount_edit.text(),
-                    note=self.note_edit.text(),
-                ),
-            )
+            if self.payment_id is None:
+                self.service.add_payment(self.liability_id, self._input())
+            else:
+                self.service.update_payment(self.payment_id, self._input())
         except LiabilityError as error:
             self.error.show_message(str(error))
             return
@@ -331,6 +372,7 @@ class LiabilityPaymentDialog(QDialog):
 
 class LiabilitiesPage(QWidget):
     open_count_changed = Signal(int)
+    linked_expenses_changed = Signal()
 
     def __init__(
         self,
@@ -344,11 +386,17 @@ class LiabilitiesPage(QWidget):
         self.currency_code = currency_code
         self.currency_symbol = currency_symbol
         self._liability_ids: list[int] = []
+        self._payment_ids: list[int] = []
         self._last_deleted_id: int | None = None
         self._undo_delete_timer = QTimer(self)
         self._undo_delete_timer.setSingleShot(True)
         self._undo_delete_timer.setInterval(10_000)
         self._undo_delete_timer.timeout.connect(self._expire_delete_undo)
+        self._last_deleted_payment_id: int | None = None
+        self._payment_undo_timer = QTimer(self)
+        self._payment_undo_timer.setSingleShot(True)
+        self._payment_undo_timer.setInterval(10_000)
+        self._payment_undo_timer.timeout.connect(self._expire_payment_undo)
 
         root = QVBoxLayout(self)
         root.setContentsMargins(0, 0, 0, 0)
@@ -510,11 +558,27 @@ class LiabilitiesPage(QWidget):
             "Payment History",
             "Select a liability to see its recorded payments.",
         )
+        payment_top = QHBoxLayout()
         self.payment_context = text_label("No liability selected.", "muted")
-        payments_card.body.addWidget(self.payment_context)
+        payment_top.addWidget(self.payment_context, 1)
+        self.payment_edit_button = button("Edit")
+        self.payment_delete_button = button("Delete")
+        self.payment_undo_button = button("Undo")
+        # Edit/Delete stay visible and use the normal theme disabled state until
+        # a payment row is selected. Undo appears only during its restore window.
+        self.payment_edit_button.setEnabled(False)
+        self.payment_delete_button.setEnabled(False)
+        self.payment_undo_button.setVisible(False)
+        self.payment_undo_button.setEnabled(False)
+        payment_top.addWidget(self.payment_edit_button)
+        payment_top.addWidget(self.payment_delete_button)
+        payment_top.addWidget(self.payment_undo_button)
+        payments_card.body.addLayout(payment_top)
+
         self.payments_table = QTableWidget(0, 3)
         self.payments_table.setHorizontalHeaderLabels(("Date", "Amount", "Note"))
-        self.payments_table.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.payments_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.payments_table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
         self.payments_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self.payments_table.verticalHeader().setVisible(False)
         payment_header = self.payments_table.horizontalHeader()
@@ -535,9 +599,13 @@ class LiabilitiesPage(QWidget):
         self.delete_button.clicked.connect(self._delete_liability)
         self.undo_delete_button.clicked.connect(self._undo_delete_liability)
         self.payment_button.clicked.connect(self._record_payment)
+        self.payment_edit_button.clicked.connect(self._edit_payment)
+        self.payment_delete_button.clicked.connect(self._delete_payment)
+        self.payment_undo_button.clicked.connect(self._undo_delete_payment)
         self.refresh_button.clicked.connect(self.refresh)
         self.status_filter.currentIndexChanged.connect(lambda *_: self.refresh())
         self.table.itemSelectionChanged.connect(self._selection_changed)
+        self.payments_table.itemSelectionChanged.connect(self._payment_selection_changed)
         self.refresh()
         QTimer.singleShot(0, lambda: self._set_header_compact(self.width() < 900))
 
@@ -670,20 +738,44 @@ class LiabilitiesPage(QWidget):
         self.payment_button.setEnabled(summary is not None and summary.remaining_minor > 0)
         self._load_payments(liability_id)
 
+    def _selected_payment_id(self) -> int | None:
+        rows = self.payments_table.selectionModel().selectedRows()
+        if len(rows) != 1:
+            return None
+        row = rows[0].row()
+        if row < 0 or row >= len(self._payment_ids):
+            return None
+        return self._payment_ids[row]
+
+    def _payment_selection_changed(self) -> None:
+        selected = self._selected_payment_id() is not None
+        self.payment_edit_button.setEnabled(selected)
+        self.payment_delete_button.setEnabled(selected)
+        # Undo is a temporary action: hidden normally, visible/enabled only while
+        # a deleted payment is still inside the 10-second restore window.
+        has_undo = self._last_deleted_payment_id is not None
+        self.payment_undo_button.setVisible(has_undo)
+        self.payment_undo_button.setEnabled(has_undo)
+
     def _load_payments(self, liability_id: int | None) -> None:
+        selected_payment_id = self._selected_payment_id()
+        self._payment_ids = []
         if liability_id is None:
             self.payment_context.setText("No liability selected.")
             self.payments_table.setRowCount(0)
+            self._payment_selection_changed()
             return
         summary = self.service.get_summary(liability_id)
         if summary is None:
             self.payment_context.setText("This liability is no longer available.")
             self.payments_table.setRowCount(0)
+            self._payment_selection_changed()
             return
         self.payment_context.setText(
             f"{summary.name} • {summary.status} • Remaining {self._format(summary.remaining_minor)}"
         )
         payments = self.service.list_payments(liability_id)
+        self._payment_ids = [payment.id for payment in payments]
         self.payments_table.setRowCount(len(payments))
         for row, payment in enumerate(payments):
             values = (payment.payment_date, self._format(payment.amount_minor), payment.note or "—")
@@ -692,6 +784,11 @@ class LiabilitiesPage(QWidget):
                 if column == 1:
                     cell.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 self.payments_table.setItem(row, column, cell)
+        if selected_payment_id in self._payment_ids:
+            self.payments_table.selectRow(self._payment_ids.index(selected_payment_id))
+        else:
+            self.payments_table.clearSelection()
+            self._payment_selection_changed()
 
     def _add_liability(self) -> None:
         dialog = LiabilityDialog(self.service, self.currency_code, parent=self)
@@ -713,6 +810,7 @@ class LiabilitiesPage(QWidget):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.feedback.setText("Liability updated.")
             self.refresh()
+            self.linked_expenses_changed.emit()
 
     def _delete_liability(self) -> None:
         liability_id = self._selected_id()
@@ -724,10 +822,14 @@ class LiabilitiesPage(QWidget):
             self.feedback.setText("That liability no longer exists.")
             self.refresh()
             return
-        if not _confirm_delete(self, summary.name):
+        history_choice = _confirm_delete(self, summary.name)
+        if history_choice is None:
             return
         try:
-            self.service.delete_liability(liability_id)
+            self.service.delete_liability(
+                liability_id,
+                keep_transaction_history=history_choice == "keep",
+            )
         except LiabilityError as error:
             self.feedback.setText(str(error))
             self.refresh()
@@ -735,9 +837,17 @@ class LiabilitiesPage(QWidget):
         self._last_deleted_id = liability_id
         self.undo_delete_button.setVisible(True)
         self._undo_delete_timer.start()
-        self.feedback.setText("Liability deleted. Undo is available for 10 seconds.")
+        if history_choice == "keep":
+            self.feedback.setText(
+                "Liability deleted. Linked Transaction history was kept. Undo is available for 10 seconds."
+            )
+        else:
+            self.feedback.setText(
+                "Liability and linked Transaction history deleted. Undo is available for 10 seconds."
+            )
         self.refresh()
         self._clear_table_selection()
+        self.linked_expenses_changed.emit()
 
     def _undo_delete_liability(self) -> None:
         liability_id = self._last_deleted_id
@@ -757,6 +867,7 @@ class LiabilitiesPage(QWidget):
         self.feedback.setText("Liability restored.")
         self.refresh()
         self._clear_table_selection()
+        self.linked_expenses_changed.emit()
 
     def _expire_delete_undo(self) -> None:
         self._last_deleted_id = None
@@ -785,3 +896,106 @@ class LiabilitiesPage(QWidget):
         if dialog.exec() == QDialog.DialogCode.Accepted:
             self.feedback.setText("Liability payment recorded.")
             self.refresh()
+            self.linked_expenses_changed.emit()
+
+    def _edit_payment(self) -> None:
+        payment_id = self._selected_payment_id()
+        liability_id = self._selected_id()
+        if payment_id is None or liability_id is None:
+            self.feedback.setText("Select a payment record first.")
+            return
+        dialog = LiabilityPaymentDialog(
+            self.service,
+            liability_id,
+            self.currency_code,
+            self.currency_symbol,
+            payment_id=payment_id,
+            parent=self,
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self.feedback.setText("Liability payment updated.")
+            self.refresh()
+            self.linked_expenses_changed.emit()
+
+    def _delete_payment(self) -> None:
+        payment_id = self._selected_payment_id()
+        if payment_id is None:
+            self.feedback.setText("Select a payment record first.")
+            return
+        payment = self.service.get_payment(payment_id)
+        if payment is None:
+            self.feedback.setText("That liability payment no longer exists.")
+            self.refresh()
+            return
+
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Delete Liability Payment")
+        dialog.setModal(True)
+        _apply_dialog_theme(dialog, self)
+        dialog.setMinimumWidth(500)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(SPACE["lg"], SPACE["lg"], SPACE["lg"], SPACE["lg"])
+        layout.setSpacing(SPACE["md"])
+        layout.addWidget(text_label("Delete this payment record?", "heading"))
+        message = text_label(
+            "The payment will be removed from the liability balance and its linked "
+            "Transaction expense will also be hidden. You can undo this for 10 seconds."
+        )
+        message.setWordWrap(True)
+        layout.addWidget(message)
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        cancel = button("Cancel")
+        delete = button("Delete Payment", "danger")
+        actions.addWidget(cancel)
+        actions.addWidget(delete)
+        layout.addLayout(actions)
+        cancel.clicked.connect(dialog.reject)
+        delete.clicked.connect(dialog.accept)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return
+
+        try:
+            changed = self.service.delete_payment(payment_id)
+        except LiabilityError as error:
+            self.feedback.setText(str(error))
+            self.refresh()
+            return
+        if not changed:
+            self.feedback.setText("That liability payment could not be deleted.")
+            self.refresh()
+            return
+        self._last_deleted_payment_id = payment_id
+        self.payment_undo_button.setVisible(True)
+        self.payment_undo_button.setEnabled(True)
+        self._payment_undo_timer.start()
+        self.feedback.setText("Liability payment deleted — Undo available for 10 seconds.")
+        self.refresh()
+        self.linked_expenses_changed.emit()
+
+    def _undo_delete_payment(self) -> None:
+        payment_id = self._last_deleted_payment_id
+        if payment_id is None:
+            self.payment_undo_button.setVisible(False)
+            self.payment_undo_button.setEnabled(False)
+            return
+        try:
+            changed = self.service.restore_payment(payment_id)
+        except LiabilityError as error:
+            self.feedback.setText(str(error))
+            self._expire_payment_undo()
+            self.refresh()
+            return
+        self._payment_undo_timer.stop()
+        self._last_deleted_payment_id = None
+        self.payment_undo_button.setVisible(False)
+        self.payment_undo_button.setEnabled(False)
+        self.feedback.setText("Liability payment restored." if changed else "Payment could not be restored.")
+        self.refresh()
+        if changed:
+            self.linked_expenses_changed.emit()
+
+    def _expire_payment_undo(self) -> None:
+        self._last_deleted_payment_id = None
+        self.payment_undo_button.setEnabled(False)
+        self.payment_undo_button.setVisible(False)

@@ -28,6 +28,7 @@ from chitlog.services.worker_payment_service import (
 from chitlog.services.worker_service import WorkerRecord
 from chitlog.ui.theme import SPACE, stylesheet
 from chitlog.ui.widgets import button, text_label
+from chitlog.ui.date_picker import configure_date_edit
 
 
 PAYMENT_TYPE_LABELS = {
@@ -151,10 +152,11 @@ class WorkerPaymentDialog(QDialog):
         form.setVerticalSpacing(SPACE["md"])
 
         self.payment_date = QDateEdit(suggested)
-        self.payment_date.setCalendarPopup(True)
-        self.payment_date.setDisplayFormat("yyyy-MM-dd")
-        self.payment_date.setMinimumDate(minimum)
-        self.payment_date.setMaximumDate(QDate.currentDate())
+        configure_date_edit(
+            self.payment_date,
+            minimum=minimum,
+            maximum=QDate.currentDate(),
+        )
         form.addRow("Payment date", self.payment_date)
 
         self.type_combo = QComboBox()
@@ -188,6 +190,14 @@ class WorkerPaymentDialog(QDialog):
         form.addRow("Note", self.note_edit)
         root.addLayout(form)
 
+        root.addWidget(
+            text_label(
+                f"Available dates: {minimum.toString('yyyy-MM-dd')} through "
+                f"{QDate.currentDate().toString('yyyy-MM-dd')}. Future dates are disabled. "
+                "If an earlier payment is needed, edit the worker's Date Added first.",
+                "muted",
+            )
+        )
         root.addWidget(
             text_label(
                 "Advances are stored as one payment type and are not also counted as normal payments.",

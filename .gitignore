@@ -157,3 +157,6 @@ temp_screenshots/
 # EULA*
 # THIRD_PARTY_NOTICES*
 # QT_LGPL_COMPLIANCE*
+
+# Local patch safety backups
+_chitlog_backup_before_*/

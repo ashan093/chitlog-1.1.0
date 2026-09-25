@@ -282,6 +282,9 @@ def main() -> int:
                 LiabilityRepository(database),
                 setup_state.currency_code or "LKR",
             )
+            # Repair missing liability-payment/Transactions mirrors before finance
+            # pages are shown. This is idempotent and preserves the Settings toggle.
+            liability_service.reconcile_transaction_expenses()
             report_service = ReportService(ReportRepository(database))
             backup_service = BackupService(
                 database,
@@ -311,6 +314,10 @@ def main() -> int:
                 worker_repository,
                 setup_state.currency_code or "LKR",
             )
+            # Repair any worker-payment/Transactions mirror mismatch left by an
+            # interrupted older build before finance pages are shown.  This pass
+            # is idempotent and runs entirely inside one local database transaction.
+            worker_payment_service.reconcile_transaction_expenses()
             worker_payroll_service = WorkerPayrollService(
                 worker_repository,
                 worker_work_service,

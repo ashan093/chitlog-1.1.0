@@ -32,6 +32,8 @@ class SettingsSnapshot:
     currency_symbol: str
     login_method: str
     recovery_questions: tuple[str, str]
+    worker_payments_in_transactions: bool
+    liability_payments_in_transactions: bool
 
 
 class SettingsService:
@@ -62,6 +64,8 @@ class SettingsService:
             currency_symbol=stored.currency_symbol,
             login_method=stored.login_method,
             recovery_questions=stored.recovery_questions,
+            worker_payments_in_transactions=self.repository.worker_payments_in_transactions(),
+            liability_payments_in_transactions=self.repository.liability_payments_in_transactions(),
         )
 
     def change_currency(self, code: str) -> CurrencyOption:
@@ -89,6 +93,21 @@ class SettingsService:
 
         self.repository.update_currency(currency.code, currency.symbol)
         return currency
+
+
+    def worker_payments_in_transactions(self) -> bool:
+        return self.repository.worker_payments_in_transactions()
+
+    def set_worker_payments_in_transactions(self, enabled: bool) -> bool:
+        self.repository.set_worker_payments_in_transactions(bool(enabled))
+        return bool(enabled)
+
+    def liability_payments_in_transactions(self) -> bool:
+        return self.repository.liability_payments_in_transactions()
+
+    def set_liability_payments_in_transactions(self, enabled: bool) -> bool:
+        self.repository.set_liability_payments_in_transactions(bool(enabled))
+        return bool(enabled)
 
     def change_credentials(
         self,

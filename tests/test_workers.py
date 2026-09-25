@@ -92,6 +92,7 @@ def test_daily_and_monthly_workers_require_a_saved_rate(service):
         WorkerInput("Name", "permanent", payment_method="daily", normal_rate="0", date_added="2026-09-01"),
         WorkerInput("Name", "permanent", payment_method="daily", normal_rate="abc", date_added="2026-09-01"),
         WorkerInput("Name", "permanent", payment_method="daily", normal_rate="100", date_added="bad-date"),
+        WorkerInput("Name", "permanent", payment_method="daily", normal_rate="100", date_added="2099-01-01"),
     ],
 )
 def test_invalid_worker_inputs_are_rejected(service, item):
@@ -126,3 +127,36 @@ def test_permanent_delete_is_blocked_when_worker_has_history(service):
     with pytest.raises(WorkerError, match="cannot be permanently deleted"):
         service.delete_worker_permanently(worker_id)
     assert service.get_worker(worker_id) is not None
+
+
+def test_permanent_delete_allows_worker_when_only_soft_deleted_work_history_remains(service):
+    worker_id = service.create_worker(
+        WorkerInput(
+            "Deleted History",
+            "temporary",
+            payment_method="job",
+            date_added="2026-09-01",
+        )
+    )
+    database = service.repository.database
+    with database.transaction() as connection:
+        cursor = connection.execute(
+            "INSERT INTO worker_work_records("
+            "worker_id,earning_type,start_date,end_date,amount_minor,description"
+            ") VALUES (?,?,?,?,?,?)",
+            (worker_id, "job", "2026-09-10", "2026-09-10", 100000, "old work"),
+        )
+        record_id = int(cursor.lastrowid)
+        connection.execute(
+            "UPDATE worker_work_records SET is_deleted=1,deleted_at=CURRENT_TIMESTAMP "
+            "WHERE id=?",
+            (record_id,),
+        )
+
+    assert service.permanent_delete_status(worker_id) == "deletable"
+    service.delete_worker_permanently(worker_id)
+    assert service.get_worker(worker_id) is None
+    assert database.connection.execute(
+        "SELECT COUNT(*) FROM worker_work_records WHERE id=?", (record_id,)
+    ).fetchone()[0] == 0
+    assert database.connection.execute("PRAGMA foreign_key_check").fetchall() == []

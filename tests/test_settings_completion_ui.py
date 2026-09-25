@@ -67,3 +67,37 @@ def test_application_wires_settings_service():
     assert "SettingsRepository" in source
     assert "SettingsService" in source
     assert "settings_service=settings_service" in source
+
+
+def test_worker_payment_expense_toggle_requires_apply_and_confirmation():
+    project = Path(__file__).resolve().parents[1]
+    page = (project / "chitlog/ui/pages/settings.py").read_text(encoding="utf-8")
+    assert 'self.apply_worker_expense_button = button("Apply", "primary")' in page
+    assert 'self.apply_worker_expense_button.setEnabled(False)' in page
+    assert 'def _confirm_worker_payment_transaction_change(self, enabled: bool)' in page
+    assert 'def _apply_worker_payments_transaction_setting(self)' in page
+    toggle_block = page[page.index('def _worker_payments_transaction_toggled'):page.index('def _confirm_worker_payment_transaction_change')]
+    assert 'set_worker_payments_in_transactions' not in toggle_block
+    apply_block = page[page.index('def _apply_worker_payments_transaction_setting'):page.index('def _save_currency')]
+    assert 'self._confirm_worker_payment_transaction_change(checked)' in apply_block
+    assert 'self.settings_service.set_worker_payments_in_transactions(checked)' in apply_block
+
+
+def test_liability_payment_expense_toggle_requires_apply_and_confirmation():
+    project = Path(__file__).resolve().parents[1]
+    page = (project / "chitlog/ui/pages/settings.py").read_text(encoding="utf-8")
+    assert 'self.liability_payments_in_transactions = QCheckBox(' in page
+    assert 'self.apply_liability_expense_button = button("Apply", "primary")' in page
+    assert 'def _confirm_liability_payment_transaction_change(self, enabled: bool)' in page
+    assert 'def _apply_liability_payments_transaction_setting(self)' in page
+    toggle_block = page[
+        page.index('def _liability_payments_transaction_toggled'):
+        page.index('def _confirm_liability_payment_transaction_change')
+    ]
+    assert 'set_liability_payments_in_transactions' not in toggle_block
+    apply_block = page[
+        page.index('def _apply_liability_payments_transaction_setting'):
+        page.index('def _save_currency')
+    ]
+    assert 'self._confirm_liability_payment_transaction_change(checked)' in apply_block
+    assert 'self.settings_service.set_liability_payments_in_transactions(checked)' in apply_block

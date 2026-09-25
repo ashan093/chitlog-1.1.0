@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import date
 
-from PySide6.QtCore import QDate, QTimer, Qt
+from PySide6.QtCore import QDate, QTimer, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
@@ -435,6 +435,7 @@ def _confirm(parent, title: str, text: str, action_text: str) -> bool:
 
 class TransactionsPage(QWidget):
     UNDO_MS = 10_000
+    linked_payment_changed = Signal(str)
 
     def __init__(
         self,
@@ -442,12 +443,18 @@ class TransactionsPage(QWidget):
         currency_code: str,
         currency_symbol: str,
         parent=None,
+        *,
+        worker_payment_service=None,
+        liability_service=None,
     ):
         super().__init__(parent)
         self.service = service
         self.currency_code = currency_code or "LKR"
         self.currency_symbol = currency_symbol or self.currency_code
+        self.worker_payment_service = worker_payment_service
+        self.liability_service = liability_service
         self.last_deleted_id: int | None = None
+        self._last_deleted_linked: tuple[str, int] | None = None
         today = QDate.currentDate()
         self.selected_month = QDate(today.year(), today.month(), 1)
         self.undo_timer = QTimer(self)
@@ -505,31 +512,42 @@ class TransactionsPage(QWidget):
         summary.addWidget(self.net_card, 1)
         root.addLayout(summary)
 
+        # Compact transaction controls: keep related filters together and
+        # left-aligned instead of distributing them across the whole page.
+        # Functionality is unchanged; this is presentation/layout only.
         filters = QHBoxLayout()
         filters.setSpacing(SPACE["sm"])
+        filters.setContentsMargins(0, 0, 0, 0)
         self.type_filter = _compact(QComboBox())
         self.type_filter.setMinimumWidth(115)
         self.type_filter.setMaximumWidth(150)
         self.type_filter.addItem("All types", None)
         self.type_filter.addItem("Income", "income")
         self.type_filter.addItem("Expense", "expense")
-        filters.addWidget(self.type_filter)
 
         self.category_filter = _compact(QComboBox())
         self.category_filter.setMinimumWidth(130)
         self.category_filter.setMaximumWidth(190)
         self.category_filter.addItem("All categories", None)
-        filters.addWidget(self.category_filter)
 
         self.search = _compact(QLineEdit())
-        self.search.setPlaceholderText("Search description, category, or payment method")
+        self.search.setPlaceholderText("Search transactions…")
+        self.search.setToolTip("Search description, category, or payment method")
         self.search.setMaxLength(120)
-        filters.addWidget(self.search, 1)
+        self.search.setMinimumWidth(260)
+        self.search.setMaximumWidth(430)
+        self.search.setClearButtonEnabled(True)
+        # Simple visual order: primary search first, then narrowing filters, then refresh.
+        filters.addWidget(self.search)
+        filters.addWidget(self.type_filter)
+        filters.addWidget(self.category_filter)
         self.refresh_button = _compact(button("Refresh"))
         filters.addWidget(self.refresh_button)
+        filters.addStretch(1)
 
         date_filters = QHBoxLayout()
         date_filters.setSpacing(SPACE["xs"])
+        date_filters.setContentsMargins(0, 0, 0, 0)
         self.use_date_range = _compact(QCheckBox("Date range"))
         date_filters.addWidget(self.use_date_range)
         self.start_date = _compact(QDateEdit(QDate.currentDate().addMonths(-1)))
@@ -555,9 +573,9 @@ class TransactionsPage(QWidget):
         date_filters.addStretch(1)
 
         filter_block = QVBoxLayout()
-        # Small breathing room below the summary cards while keeping the
-        # filter and date-range rows visually grouped.
-        filter_block.setContentsMargins(0, SPACE["sm"], 0, 0)
+        # Two compact, predictable rows: normal filters/search first; optional
+        # custom date range directly underneath. Month navigation stays separate.
+        filter_block.setContentsMargins(0, SPACE["xs"], 0, 0)
         filter_block.setSpacing(SPACE["xs"])
         filter_block.addLayout(filters)
         filter_block.addLayout(date_filters)
@@ -711,9 +729,38 @@ class TransactionsPage(QWidget):
         return int(item.data(Qt.ItemDataRole.UserRole)) if item else None
 
     def _selection_changed(self) -> None:
-        enabled = self._selected_id() is not None
-        self.edit_button.setEnabled(enabled)
-        self.delete_button.setEnabled(enabled)
+        transaction_id = self._selected_id()
+        enabled = transaction_id is not None
+        linked_source = self.service.linked_expense_source(transaction_id) if enabled else None
+        linked_expense = linked_source is not None
+        self.edit_button.setEnabled(enabled and not linked_expense)
+
+        linked_delete_available = True
+        if linked_source == "worker_payment":
+            linked_delete_available = self.worker_payment_service is not None
+            edit_tip = "This expense is linked to a worker payment and cannot be edited here."
+            delete_tip = (
+                "Delete this expense and the original worker payment/advance record."
+                if linked_delete_available
+                else "Worker payment service is unavailable."
+            )
+        elif linked_source == "liability_payment":
+            linked_delete_available = self.liability_service is not None
+            edit_tip = "This expense is linked to a liability payment and cannot be edited here."
+            delete_tip = (
+                "Delete this expense and the original liability payment record."
+                if linked_delete_available
+                else "Liability payment service is unavailable."
+            )
+        else:
+            edit_tip = ""
+            delete_tip = ""
+
+        # Linked expenses are intentionally non-editable in Transactions, but
+        # deletion is allowed when the authoritative payment service is available.
+        self.delete_button.setEnabled(enabled and (not linked_expense or linked_delete_available))
+        self.edit_button.setToolTip(edit_tip)
+        self.delete_button.setToolTip(delete_tip)
 
     def _refresh_category_filter(self) -> None:
         selected = self.category_filter.currentData()
@@ -851,6 +898,13 @@ class TransactionsPage(QWidget):
         transaction_id = self._selected_id()
         if transaction_id is None:
             return
+        linked_source = self.service.linked_expense_source(transaction_id)
+        if linked_source == "worker_payment":
+            self._show_feedback("This expense is linked to a worker payment. Edit it from Workers.")
+            return
+        if linked_source == "liability_payment":
+            self._show_feedback("This expense is linked to a liability payment. Manage it from Liabilities.")
+            return
         record = self.service.get_transaction(transaction_id)
         if record is None:
             self._show_feedback("The selected transaction is no longer available.")
@@ -875,6 +929,60 @@ class TransactionsPage(QWidget):
         if record is None:
             self.refresh()
             return
+
+        linked = self.service.linked_expense_reference(transaction_id)
+        if linked is not None:
+            source, source_id = linked
+            if source == "worker_payment":
+                if self.worker_payment_service is None:
+                    self._show_feedback("Worker payment service is unavailable. Nothing was deleted.")
+                    return
+                title = "Delete Linked Worker Payment"
+                message = (
+                    "This expense comes from a worker payment or advance. Deleting it here will also "
+                    "delete the original payment record from Workers, update worker payroll/balances, "
+                    "and remove this expense from Transactions. You can undo for 10 seconds."
+                )
+                source_label = "Worker payment and linked expense"
+            elif source == "liability_payment":
+                if self.liability_service is None:
+                    self._show_feedback("Liability payment service is unavailable. Nothing was deleted.")
+                    return
+                title = "Delete Linked Liability Payment"
+                message = (
+                    "This expense comes from a liability payment. Deleting it here will also delete "
+                    "the original payment record from Liability Payment History, update the liability "
+                    "balance, and remove this expense from Transactions. You can undo for 10 seconds."
+                )
+                source_label = "Liability payment and linked expense"
+            else:
+                self._show_feedback("The linked payment type is not supported for deletion here.")
+                return
+
+            if not _confirm(self, title, message, "Delete Payment"):
+                return
+            try:
+                if source == "worker_payment":
+                    changed = bool(self.worker_payment_service.delete(source_id))
+                else:
+                    changed = bool(self.liability_service.delete_payment(source_id))
+            except ValueError as error:
+                self._show_feedback(str(error))
+                self.refresh()
+                return
+            if not changed:
+                self._show_feedback("The original payment record could not be deleted.")
+                self.refresh()
+                return
+
+            self.last_deleted_id = transaction_id
+            self._last_deleted_linked = (source, source_id)
+            self.undo_timer.start(self.UNDO_MS)
+            self._show_feedback(f"{source_label} deleted.", show_undo=True)
+            self.refresh()
+            self.linked_payment_changed.emit(source)
+            return
+
         confirmed = _confirm(
             self,
             "Delete Transaction",
@@ -889,6 +997,7 @@ class TransactionsPage(QWidget):
             self.refresh()
             return
         self.last_deleted_id = transaction_id
+        self._last_deleted_linked = None
         self.undo_timer.start(self.UNDO_MS)
         self._show_feedback("Transaction deleted.", show_undo=True)
         self.refresh()
@@ -897,8 +1006,44 @@ class TransactionsPage(QWidget):
         if self.last_deleted_id is None:
             return
         transaction_id = self.last_deleted_id
+        linked = self._last_deleted_linked
         self.last_deleted_id = None
+        self._last_deleted_linked = None
         self.undo_timer.stop()
+
+        if linked is not None:
+            source, source_id = linked
+            try:
+                if source == "worker_payment":
+                    changed = (
+                        self.worker_payment_service is not None
+                        and bool(self.worker_payment_service.restore(source_id))
+                    )
+                    restored_label = "Worker payment and linked expense"
+                elif source == "liability_payment":
+                    changed = (
+                        self.liability_service is not None
+                        and bool(self.liability_service.restore_payment(source_id))
+                    )
+                    restored_label = "Liability payment and linked expense"
+                else:
+                    changed = False
+                    restored_label = "Linked payment"
+            except ValueError as error:
+                self._show_feedback(str(error))
+                self.refresh()
+                return
+
+            if changed:
+                self._show_feedback(f"{restored_label} restored.")
+                self.linked_payment_changed.emit(source)
+            else:
+                self._show_feedback(
+                    "The original payment could not be restored. Its source record may no longer exist."
+                )
+            self.refresh()
+            return
+
         if self.service.undo_delete(transaction_id):
             self._show_feedback("Transaction restored.")
         else:
@@ -907,8 +1052,9 @@ class TransactionsPage(QWidget):
 
     def _expire_undo(self) -> None:
         self.last_deleted_id = None
+        self._last_deleted_linked = None
         self.undo_button.setVisible(False)
-        if self.feedback_bar.isVisible() and self.feedback_text.text() == "Transaction deleted.":
+        if self.feedback_bar.isVisible() and self.feedback_text.text().endswith("deleted."):
             self.feedback_bar.setVisible(False)
 
     def _show_feedback(self, message: str, *, show_undo: bool = False) -> None:

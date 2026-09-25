@@ -132,9 +132,35 @@ class TransactionService:
             payment_method=payment_method,
         )
 
+    def is_worker_payment_expense(self, transaction_id: int) -> bool:
+        source = self.repository.source_for(transaction_id)
+        return source is not None and source[0] == "worker_payment"
+
+    def is_liability_payment_expense(self, transaction_id: int) -> bool:
+        return self.repository.liability_payment_for(transaction_id) is not None
+
+    def linked_expense_reference(self, transaction_id: int) -> tuple[str, int] | None:
+        """Return the authoritative payment record behind a linked expense."""
+        source = self.repository.source_for(transaction_id)
+        if source is not None and source[0] == "worker_payment" and source[1] is not None:
+            return ("worker_payment", int(source[1]))
+        liability_payment_id = self.repository.liability_payment_for(transaction_id)
+        if liability_payment_id is not None:
+            return ("liability_payment", int(liability_payment_id))
+        return None
+
+    def linked_expense_source(self, transaction_id: int) -> str | None:
+        reference = self.linked_expense_reference(transaction_id)
+        return reference[0] if reference is not None else None
+
     def update_transaction(self, transaction_id: int, value: TransactionInput) -> None:
         if self.repository.get_transaction(transaction_id) is None:
             raise TransactionError("The selected transaction no longer exists.")
+        source = self.linked_expense_source(transaction_id)
+        if source == "worker_payment":
+            raise TransactionError("Worker payment expenses are managed from the Workers page.")
+        if source == "liability_payment":
+            raise TransactionError("Liability payment expenses are managed from the Liabilities page.")
         kind, transaction_date, amount_minor, category_id, description, payment_method = self._validated_input(value)
         self.repository.update_transaction(
             transaction_id,
@@ -180,9 +206,13 @@ class TransactionService:
         )
 
     def delete_transaction(self, transaction_id: int) -> bool:
+        if self.linked_expense_source(transaction_id) is not None:
+            return False
         return self.repository.soft_delete(transaction_id)
 
     def undo_delete(self, transaction_id: int) -> bool:
+        if self.linked_expense_source(transaction_id) is not None:
+            return False
         return self.repository.restore(transaction_id)
 
     def totals(self) -> tuple[int, int, int]:

@@ -31,11 +31,24 @@ def test_payroll_layout_order_and_scrollable_table_are_defined():
     assert carry_block.index('carry_layout.addStretch(1)') < carry_block.index('carry_layout.addWidget(self.select_slips_button)')
 
 
-def test_fixed_worker_tabs_keep_minimum_width_labels():
+def test_workers_use_single_page_instead_of_fixed_child_tabs():
     root = Path(__file__).resolve().parents[1]
     main = (root / "chitlog/ui/main_window.py").read_text(encoding="utf-8")
-    theme = (root / "chitlog/ui/theme.py").read_text(encoding="utf-8")
-    assert 'tabs_narrow = width < 650' in main
-    assert '("Profiles", "Records", "Payments", "Payroll")' in main
-    assert 'setTabToolTip' in main
-    assert 'QTabBar#workerFixedTabs[responsiveCompact="true"]::tab' in theme
+    workers = (root / "chitlog/ui/pages/workers.py").read_text(encoding="utf-8")
+
+    # The redesigned Workers area is one page. The old fixed child-tab
+    # navigation must not be recreated in MainWindow.
+    assert 'tabs_narrow = width < 650' not in main
+    assert '("Profiles", "Records", "Payments", "Payroll")' not in main
+    assert 'setTabToolTip' not in main
+    assert 'return WorkersPage(' in main
+
+    # Essential actions and monthly payroll remain available on that page.
+    assert 'button("+ Add Worker", "primary")' in workers
+    assert 'button("+ Work", "primary")' in workers
+    assert 'button("+ Other Earning")' in workers
+    assert 'button("+ Payment")' in workers
+    assert 'button("+ Advance")' in workers
+    assert 'Card("Monthly Payroll Overview")' in workers
+    assert 'button("Generate Salary Slips")' in workers
+    assert 'self.activity_table = QTableWidget(0, 5)' in workers

@@ -22,18 +22,29 @@ from __future__ import annotations
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer
 from PySide6.QtGui import QFontMetrics, QPalette
 from PySide6.QtWidgets import (
+    QAbstractButton,
     QAbstractItemView,
     QApplication,
     QComboBox,
     QDateEdit,
     QFrame,
+    QGroupBox,
     QLabel,
     QLineEdit,
+    QPlainTextEdit,
     QPushButton,
+    QScrollBar,
+    QSlider,
+    QSpinBox,
+    QDoubleSpinBox,
+    QTabBar,
+    QTextEdit,
     QSizePolicy,
     QTableWidget,
     QWidget,
 )
+
+from chitlog.ui.theme import resolve_theme
 
 # Compact action footprint. + Liability is the visual reference: short actions
 # stay at the same compact 96 px footprint, while longer labels may use only the
@@ -338,8 +349,8 @@ def _summary_accent(frame: QFrame) -> str:
     return "general"
 
 
-def _polish_summary(frame: QFrame) -> None:
-    """Keep one summary card compact without repeatedly restyling it."""
+def _polish_summary(frame: QFrame, theme_value: str) -> None:
+    """Keep one summary card compact and synchronized to the effective theme."""
     if not _is_summary_frame(frame):
         return
 
@@ -398,14 +409,20 @@ def _polish_summary(frame: QFrame) -> None:
         margins, spacing, metric_height = 10, 4, 30
 
     accent = _summary_accent(frame)
+    # Theme is part of the card's own style signature.  Parent dynamic-property
+    # selectors are not reliably re-evaluated by Qt for every already-polished
+    # descendant when Light/Dark/System changes.  Storing the effective theme
+    # directly on every summary card makes theme switching deterministic across
+    # all pages, including lazy-built pages.
     signature = (
-        f"{density}|{accent}|{target_min_width}|{target_max_width}|"
+        f"{theme_value}|{density}|{accent}|{target_min_width}|{target_max_width}|"
         f"{target_min_height}|{target_max_height}|{metric_height}|{len(labels)}"
     )
     if frame.property("step23SummarySignature") == signature:
         return
 
     frame.setProperty("step23Summary", True)
+    frame.setProperty("step23Theme", theme_value)
     frame.setProperty("step23Accent", accent)
     frame.setProperty("step23SummaryDensity", density)
     frame.setProperty("step23SummarySignature", signature)
@@ -453,11 +470,17 @@ def _polish_summary(frame: QFrame) -> None:
         label.updateGeometry()
 
 def _set_theme_property(root: QWidget) -> None:
-    """Update the Step 23 theme selector only when it actually changes."""
-    palette = root.palette()
-    bg = palette.color(QPalette.ColorRole.Window)
-    luminance = (0.2126 * bg.red()) + (0.7152 * bg.green()) + (0.0722 * bg.blue())
-    theme_value = "dark" if luminance < 128 else "light"
+    """Keep Step 23 card styling aligned with ChitLog's actual theme setting."""
+    configured = getattr(root, "theme_name", None)
+    if configured in {"light", "dark", "system"}:
+        theme_value = resolve_theme(configured)
+    else:
+        # Fallback for isolated widgets/tests that do not carry MainWindow's
+        # theme_name attribute. The app itself normally uses the branch above.
+        palette = root.palette()
+        bg = palette.color(QPalette.ColorRole.Window)
+        luminance = (0.2126 * bg.red()) + (0.7152 * bg.green()) + (0.0722 * bg.blue())
+        theme_value = "dark" if luminance < 128 else "light"
     if root.property("step23Theme") == theme_value:
         return
 
@@ -491,9 +514,14 @@ def _cached_summary_frames(root: QWidget) -> list[QFrame]:
 
 def _polish_summaries(root: QWidget, *, discover: bool = False) -> None:
     cards = _discover_summary_frames(root) if discover else _cached_summary_frames(root)
+    configured = getattr(root, "theme_name", None)
+    if configured in {"light", "dark", "system"}:
+        theme_value = resolve_theme(configured)
+    else:
+        theme_value = str(root.property("step23Theme") or "light")
     for frame in cards:
         try:
-            _polish_summary(frame)
+            _polish_summary(frame, theme_value)
         except RuntimeError:
             # A deferred page placeholder may have been deleted. The next
             # explicit apply will rebuild the cache from live widgets.
@@ -566,6 +594,52 @@ class _Step23Controller(QObject):
             current = current.parentWidget()
         return False
 
+    @staticmethod
+    def _is_empty_background_target(widget: QWidget) -> bool:
+        """Return True only for genuine non-interactive page/background space.
+
+        Selection is deliberately *not* cleared when the user clicks a button,
+        input, label, tab, scrollbar, or other content/control. This keeps the
+        selected record available while the user acts on it. Plain container
+        widgets (page/card/layout backgrounds) are the only click-away targets.
+        """
+        interactive_types = (
+            QAbstractButton,
+            QAbstractItemView,
+            QComboBox,
+            QDateEdit,
+            QLineEdit,
+            QPlainTextEdit,
+            QScrollBar,
+            QSlider,
+            QSpinBox,
+            QDoubleSpinBox,
+            QTabBar,
+            QTextEdit,
+        )
+        content_types = (QLabel,)
+
+        current: QWidget | None = widget
+        while current is not None:
+            if isinstance(current, interactive_types) or isinstance(current, content_types):
+                return False
+            if isinstance(current, QGroupBox) and current.isCheckable():
+                return False
+            if bool(current.property("keepTableSelectionOnClick")):
+                return False
+            current = current.parentWidget()
+
+        # A layout-bearing widget is normally a page/card/panel background.
+        # Exact plain QWidget viewports are also background targets. QFrame is
+        # included so ChitLog's custom Card(QFrame) empty space behaves the same
+        # way. Specialized visual widgets (charts/progress displays/etc.) do not
+        # clear merely because they inherit QWidget.
+        return (
+            widget.layout() is not None
+            or isinstance(widget, QFrame)
+            or type(widget) is QWidget
+        )
+
     def clear_table_selections(self) -> None:
         """Clear both selected rows and the stale current index on every table."""
         for table in tuple(self._table_views):
@@ -601,10 +675,12 @@ class _Step23Controller(QObject):
             return False
         if self._inside_table(watched):
             return False
+        if not self._is_empty_background_target(watched):
+            return False
 
-        # Queue the clear until after the clicked widget has handled this mouse
-        # release. Action buttons can therefore still read the selected record
-        # before the normal click-away behavior resets the table selection.
+        # Only genuine empty/background space clears selections. Controls and
+        # visible content keep the current record selected so users can perform
+        # Edit/Delete/Payment/etc. without losing context.
         QTimer.singleShot(0, self.clear_table_selections)
         return False
 
@@ -640,42 +716,55 @@ def apply_step23_polish(root: QWidget) -> None:
                brand family instead of rainbow semantic fills. The body stays
                calm; a slim top accent plus a very light teal/navy wash gives
                hierarchy without looking like a nested card. */
-            QWidget[step23Theme="light"] QFrame[step23Summary="true"] {
+            QFrame[step23Summary="true"][step23Theme="light"] {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
                     stop:0 rgba(255,255,255,238), stop:1 rgba(47,157,148,18));
                 border: 1px solid #C4D3D5;
                 border-top: 3px solid #2F9D94;
             }
-            QWidget[step23Theme="light"] QFrame[step23Accent="balance"],
-            QWidget[step23Theme="light"] QFrame[step23Accent="budget"],
-            QWidget[step23Theme="light"] QFrame[step23Accent="worker"] { border-top-color: #2F9D94; }
-            QWidget[step23Theme="light"] QFrame[step23Accent="income"],
-            QWidget[step23Theme="light"] QFrame[step23Accent="paid"] { border-top-color: #025F67; }
-            QWidget[step23Theme="light"] QFrame[step23Accent="expense"],
-            QWidget[step23Theme="light"] QFrame[step23Accent="liability"] { border-top-color: #063154; }
-            QWidget[step23Theme="light"] QFrame[step23Accent="net"],
-            QWidget[step23Theme="light"] QFrame[step23Accent="general"] { border-top-color: #4D8F94; }
-            QWidget[step23Theme="light"] QFrame[step23Summary="true"] QLabel[role="metric"] { color: #025F67; }
+            QFrame[step23Theme="light"][step23Accent="balance"],
+            QFrame[step23Theme="light"][step23Accent="budget"],
+            QFrame[step23Theme="light"][step23Accent="worker"] { border-top-color: #2F9D94; }
+            QFrame[step23Theme="light"][step23Accent="income"],
+            QFrame[step23Theme="light"][step23Accent="paid"] { border-top-color: #025F67; }
+            QFrame[step23Theme="light"][step23Accent="expense"],
+            QFrame[step23Theme="light"][step23Accent="liability"] { border-top-color: #063154; }
+            QFrame[step23Theme="light"][step23Accent="net"],
+            QFrame[step23Theme="light"][step23Accent="general"] { border-top-color: #4D8F94; }
+            QFrame[step23Summary="true"][step23Theme="light"] QLabel[role="metric"] { color: #025F67; }
 
-            QWidget[step23Theme="dark"] QFrame[step23Summary="true"] {
+            QFrame[step23Summary="true"][step23Theme="dark"] {
                 background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
-                    stop:0 rgba(11,48,71,232), stop:1 rgba(2,95,103,82));
-                border: 1px solid #416071;
-                border-top: 3px solid #7AD5CB;
+                    stop:0 #071F31, stop:0.52 #093247, stop:1 #0B4050);
+                border: 1px solid #2C6874;
+                border-top: 3px solid #2F9D94;
             }
-            QWidget[step23Theme="dark"] QFrame[step23Accent="income"],
-            QWidget[step23Theme="dark"] QFrame[step23Accent="paid"] { border-top-color: #7AD5CB; }
-            QWidget[step23Theme="dark"] QFrame[step23Accent="expense"],
-            QWidget[step23Theme="dark"] QFrame[step23Accent="liability"] { border-top-color: #BCC5CC; }
-            QWidget[step23Theme="dark"] QFrame[step23Accent="net"],
-            QWidget[step23Theme="dark"] QFrame[step23Accent="general"] { border-top-color: #5AB8B0; }
-            QWidget[step23Theme="dark"] QFrame[step23Summary="true"] QLabel[role="metric"] { color: #7AD5CB; }
+            QFrame[step23Theme="dark"][step23Accent="balance"],
+            QFrame[step23Theme="dark"][step23Accent="budget"],
+            QFrame[step23Theme="dark"][step23Accent="worker"] { border-top-color: #2F9D94; }
+            QFrame[step23Theme="dark"][step23Accent="income"],
+            QFrame[step23Theme="dark"][step23Accent="paid"] { border-top-color: #7AD5CB; }
+            QFrame[step23Theme="dark"][step23Accent="expense"],
+            QFrame[step23Theme="dark"][step23Accent="liability"] { border-top-color: #BCC5CC; }
+            QFrame[step23Theme="dark"][step23Accent="net"],
+            QFrame[step23Theme="dark"][step23Accent="general"] { border-top-color: #5AB8B0; }
+            QFrame[step23Summary="true"][step23Theme="dark"] QLabel[role="heading"] { color: #F7F6F2; font-weight: 700; }
+            QFrame[step23Summary="true"][step23Theme="dark"] QLabel[role="metric"] { color: #A6F2E9; font-weight: 700; }
+            QFrame[step23Summary="true"][step23Theme="dark"] QLabel[role="muted"] { color: #D8E1E6; }
             """
         root.setProperty("step23OverlayCss", overlay_css)
         root.setStyleSheet(root.styleSheet() + overlay_css)
 
         controller = _Step23Controller(root)
         root._step23_controller = controller
+    else:
+        # MainWindow.apply_theme() replaces the complete application stylesheet.
+        # The Step 23 property/controller survive that replacement, so explicitly
+        # restore this overlay when its marker is no longer present.
+        overlay_css = root.property("step23OverlayCss")
+        current_css = root.styleSheet()
+        if isinstance(overlay_css, str) and overlay_css and "CHITLOG_STEP23_OVERLAY" not in current_css:
+            root.setStyleSheet(current_css + overlay_css)
 
     # Explicit calls happen only at startup, after a lazy page is created, or
     # after a theme stylesheet replacement. Re-scan at those moments so new

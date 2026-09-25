@@ -57,6 +57,8 @@ class WorkerService:
             parsed = date.fromisoformat(text)
         except ValueError:
             raise WorkerError("Enter a valid date added.") from None
+        if parsed > date.today():
+            raise WorkerError("Date Added cannot be in the future.")
         return parsed.isoformat()
 
     def _validated(self, item: WorkerInput) -> dict[str, object]:
@@ -145,8 +147,12 @@ class WorkerService:
             raise WorkerError("That worker could not be reactivated.")
 
 
+    def permanent_delete_status(self, worker_id: int) -> str:
+        """Return whether a worker can be permanently deleted right now."""
+        return self.repository.permanent_delete_status(worker_id)
+
     def delete_worker_permanently(self, worker_id: int) -> None:
-        """Irreversibly remove a worker profile when no history references it."""
+        """Irreversibly remove a worker profile when no retained history references it."""
         result = self.repository.delete_worker_permanently(worker_id)
         if result == "deleted":
             return

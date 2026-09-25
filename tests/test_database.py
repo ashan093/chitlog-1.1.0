@@ -20,12 +20,12 @@ def db(tmp_path):
 
 
 def test_create_reopen_and_schema_history(db):
-    assert db.version == 13
-    assert db.connection.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 13
+    assert db.version == len(MIGRATIONS)
+    assert db.connection.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == len(MIGRATIONS)
     db.close()
     db.open()
-    assert db.version == 13
-    assert db.connection.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 13
+    assert db.version == len(MIGRATIONS)
+    assert db.connection.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == len(MIGRATIONS)
 
 
 def test_copied_database_rejects_plain_sqlite_and_wrong_key(db, tmp_path):
@@ -93,12 +93,13 @@ def test_snapshot_encrypted_and_reopenable(db):
 
 
 def test_migration_failure_rolls_back_and_retains_snapshot(db):
-    migrations = MIGRATIONS + ((14, "deliberate_failure", (
+    next_version = len(MIGRATIONS) + 1
+    migrations = MIGRATIONS + ((next_version, "deliberate_failure", (
         "CREATE TABLE should_rollback(id INTEGER)", "THIS IS INVALID SQL"
     )),)
     with pytest.raises(sql.Error):
         migrate(db.connection, db.snapshot, migrations)
-    assert db.version == 13
+    assert db.version == len(MIGRATIONS)
     assert not db.connection.execute("SELECT name FROM sqlite_master WHERE name='should_rollback'").fetchall()
     snapshots = list(db.backup_dir.glob("migration-*.db"))
     assert len(snapshots) == 1
@@ -106,20 +107,22 @@ def test_migration_failure_rolls_back_and_retains_snapshot(db):
 
 
 def test_successful_migration_is_idempotent(db):
-    migrations = MIGRATIONS + ((14, "test_upgrade", ("CREATE TABLE upgraded(id INTEGER)",)),)
+    next_version = len(MIGRATIONS) + 1
+    migrations = MIGRATIONS + ((next_version, "test_upgrade", ("CREATE TABLE upgraded(id INTEGER)",)),)
     migrate(db.connection, db.snapshot, migrations)
     migrate(db.connection, db.snapshot, migrations)
-    assert db.version == 14
+    assert db.version == next_version
     assert len(list(db.backup_dir.glob("migration-*.db"))) == 1
-    assert db.connection.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == 14
+    assert db.connection.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == next_version
 
 
 def test_backup_failure_prevents_migration(db):
     def fail():
         raise OSError("no space")
+    next_version = len(MIGRATIONS) + 1
     with pytest.raises(OSError):
-        migrate(db.connection, fail, MIGRATIONS + ((14, "upgrade", ("CREATE TABLE extra(id INTEGER)",)),))
-    assert db.version == 13
+        migrate(db.connection, fail, MIGRATIONS + ((next_version, "upgrade", ("CREATE TABLE extra(id INTEGER)",)),))
+    assert db.version == len(MIGRATIONS)
     assert not db.connection.execute("SELECT name FROM sqlite_master WHERE name='extra'").fetchall()
 
 
@@ -127,8 +130,8 @@ def test_newer_schema_and_inconsistent_history_rejected(db):
     db.connection.execute("PRAGMA user_version=999")
     with pytest.raises(SchemaError):
         migrate(db.connection, db.snapshot)
-    db.connection.execute("PRAGMA user_version=13")
-    db.connection.execute("UPDATE schema_migrations SET name='unexpected' WHERE version=13")
+    db.connection.execute(f"PRAGMA user_version={len(MIGRATIONS)}")
+    db.connection.execute("UPDATE schema_migrations SET name='unexpected' WHERE version=?", (len(MIGRATIONS),))
     with pytest.raises(SchemaError):
         migrate(db.connection, db.snapshot)
 

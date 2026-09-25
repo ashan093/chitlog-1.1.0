@@ -1,7 +1,7 @@
 """Step 14 monthly worker payroll summary UI."""
 from __future__ import annotations
 
-from PySide6.QtCore import QDate, QEvent, QTimer, Qt
+from PySide6.QtCore import QDate, QTimer, Qt
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -33,9 +33,10 @@ WORKER_TYPE_LABELS = {"permanent": "Permanent", "temporary": "Temporary"}
 class WorkerPayrollSummaryPage(QWidget):
     """Month-by-month payroll state for all matching workers.
 
-    The cards show totals by default.  Selecting a worker row switches the same
-    cards to that worker's numbers; clicking elsewhere in this page clears the
-    row selection and returns the cards to the totals view.
+    The cards show totals by default. Selecting a worker row switches the same
+    cards to that worker's numbers. Global click-away selection handling is
+    provided centrally by Step 23 so this page follows the same rule as every
+    other ChitLog table.
     """
 
     def __init__(
@@ -282,32 +283,6 @@ class WorkerPayrollSummaryPage(QWidget):
         self._update_month_navigation()
         self._apply_responsive_layout(self.width())
         self.refresh()
-
-        # Catch clicks on controls/cards/background outside the payroll table.
-        # Table children (viewport + scrollbars) are deliberately excluded so
-        # selecting rows and using the horizontal scrollbar do not clear the row.
-        self.installEventFilter(self)
-        for child in self.findChildren(QWidget):
-            if child is self.table or self.table.isAncestorOf(child):
-                continue
-            child.installEventFilter(self)
-
-    def eventFilter(self, watched, event) -> bool:
-        if event.type() == QEvent.Type.MouseButtonPress and self.isVisible():
-            if watched is self or (
-                isinstance(watched, QWidget) and self.isAncestorOf(watched)
-            ):
-                inside_table = watched is self.table or self.table.isAncestorOf(watched)
-                inside_carry = (
-                    watched is self.carry_control
-                    or self.carry_control.isAncestorOf(watched)
-                )
-                if not inside_table and not inside_carry:
-                    if self.table.selectionModel().hasSelection():
-                        self.table.clearSelection()
-                        self._show_total_cards()
-                        self._set_global_carry_context()
-        return super().eventFilter(watched, event)
 
     def resizeEvent(self, event) -> None:
         super().resizeEvent(event)

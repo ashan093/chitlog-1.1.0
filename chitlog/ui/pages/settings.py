@@ -5,6 +5,7 @@ from PySide6.QtCore import Signal, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QDialog,
     QFormLayout,
     QGridLayout,
     QHBoxLayout,
@@ -110,6 +111,8 @@ class SettingsPage(QWidget):
     notification_settings_changed = Signal()
     notification_test_requested = Signal()
     restore_completed = Signal()
+    worker_transaction_setting_changed = Signal(bool)
+    liability_transaction_setting_changed = Signal(bool)
 
     def __init__(
         self,
@@ -229,6 +232,66 @@ class SettingsPage(QWidget):
         appearance_row.addStretch(1)
         appearance_card.body.addLayout(appearance_row)
         root.addWidget(appearance_card)
+
+        # ---------------------------------------------------------------
+        # Worker payments in Transactions
+        # ---------------------------------------------------------------
+        worker_expense_card = Card("Worker Payments")
+        self._compact_card(worker_expense_card)
+        self.worker_payments_in_transactions = QCheckBox(
+            "Include worker payments and advances in Transactions → Expenses"
+        )
+        self.worker_payments_in_transactions.setToolTip(
+            "When enabled, every worker payment or advance appears once as a linked expense. "
+            "Turn this off to hide those linked expenses without deleting worker payment history."
+        )
+        worker_expense_row = QHBoxLayout()
+        worker_expense_row.setSpacing(SPACE["sm"])
+        worker_expense_row.addWidget(self.worker_payments_in_transactions, 1)
+        self.apply_worker_expense_button = button("Apply", "primary")
+        self.apply_worker_expense_button.setEnabled(False)
+        worker_expense_row.addWidget(self.apply_worker_expense_button)
+        worker_expense_card.body.addLayout(worker_expense_row)
+        worker_expense_card.body.addWidget(
+            text_label(
+                "Default: On. Linked worker expenses are managed from Workers so they cannot be accidentally duplicated or edited separately.",
+                "muted",
+            )
+        )
+        self.worker_expense_feedback = text_label("", "muted")
+        self.worker_expense_feedback.setVisible(False)
+        worker_expense_card.body.addWidget(self.worker_expense_feedback)
+        root.addWidget(worker_expense_card)
+
+        # ---------------------------------------------------------------
+        # Liability payments in Transactions
+        # ---------------------------------------------------------------
+        liability_expense_card = Card("Liability Payments")
+        self._compact_card(liability_expense_card)
+        self.liability_payments_in_transactions = QCheckBox(
+            "Include liability payments in Transactions → Expenses"
+        )
+        self.liability_payments_in_transactions.setToolTip(
+            "When enabled, each recorded liability payment appears once as a linked expense. "
+            "Turn this off to hide those linked expenses without changing liability payment history."
+        )
+        liability_expense_row = QHBoxLayout()
+        liability_expense_row.setSpacing(SPACE["sm"])
+        liability_expense_row.addWidget(self.liability_payments_in_transactions, 1)
+        self.apply_liability_expense_button = button("Apply", "primary")
+        self.apply_liability_expense_button.setEnabled(False)
+        liability_expense_row.addWidget(self.apply_liability_expense_button)
+        liability_expense_card.body.addLayout(liability_expense_row)
+        liability_expense_card.body.addWidget(
+            text_label(
+                "Default: On. Linked liability-payment expenses are managed from Liabilities and cannot be edited separately in Transactions.",
+                "muted",
+            )
+        )
+        self.liability_expense_feedback = text_label("", "muted")
+        self.liability_expense_feedback.setVisible(False)
+        liability_expense_card.body.addWidget(self.liability_expense_feedback)
+        root.addWidget(liability_expense_card)
 
         # ---------------------------------------------------------------
         # Security — compact two-column layout
@@ -426,6 +489,18 @@ class SettingsPage(QWidget):
         self.save_recovery_button.clicked.connect(self._save_recovery)
         self.show_secret_fields.toggled.connect(self._toggle_credentials)
         self.show_recovery_fields.toggled.connect(self._toggle_recovery)
+        self.worker_payments_in_transactions.toggled.connect(
+            self._worker_payments_transaction_toggled
+        )
+        self.apply_worker_expense_button.clicked.connect(
+            self._apply_worker_payments_transaction_setting
+        )
+        self.liability_payments_in_transactions.toggled.connect(
+            self._liability_payments_transaction_toggled
+        )
+        self.apply_liability_expense_button.clicked.connect(
+            self._apply_liability_payments_transaction_setting
+        )
 
         self.refresh(refresh_notifications=False)
 
@@ -471,6 +546,24 @@ class SettingsPage(QWidget):
         self.login_method_label.setText(
             f"Current login method: {snapshot.login_method.title()}"
         )
+        self._saved_worker_payments_in_transactions = bool(
+            snapshot.worker_payments_in_transactions
+        )
+        self.worker_payments_in_transactions.blockSignals(True)
+        self.worker_payments_in_transactions.setChecked(
+            self._saved_worker_payments_in_transactions
+        )
+        self.worker_payments_in_transactions.blockSignals(False)
+        self.apply_worker_expense_button.setEnabled(False)
+        self._saved_liability_payments_in_transactions = bool(
+            snapshot.liability_payments_in_transactions
+        )
+        self.liability_payments_in_transactions.blockSignals(True)
+        self.liability_payments_in_transactions.setChecked(
+            self._saved_liability_payments_in_transactions
+        )
+        self.liability_payments_in_transactions.blockSignals(False)
+        self.apply_liability_expense_button.setEnabled(False)
 
         # Question text is not secret, so it can be shown. Stored answer hashes
         # can never be reversed, therefore answer fields intentionally stay blank.
@@ -482,6 +575,149 @@ class SettingsPage(QWidget):
 
         if self.notifications_page is not None and refresh_notifications:
             self.notifications_page.refresh()
+
+    def _worker_payments_transaction_toggled(self, checked: bool) -> None:
+        saved = bool(getattr(self, "_saved_worker_payments_in_transactions", checked))
+        changed = bool(checked) != saved
+        self.apply_worker_expense_button.setEnabled(changed)
+        if changed:
+            self._show_feedback(
+                self.worker_expense_feedback,
+                "Unsaved change — click Apply to update worker-payment expense visibility.",
+            )
+        else:
+            self.worker_expense_feedback.setVisible(False)
+
+    def _confirm_worker_payment_transaction_change(self, enabled: bool) -> bool:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Apply Worker Payment Setting")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(520)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(SPACE["lg"], SPACE["lg"], SPACE["lg"], SPACE["lg"])
+        layout.setSpacing(SPACE["md"])
+        layout.addWidget(text_label("Apply this setting?", "heading"))
+        message = (
+            "Worker payments and advances will appear in Transactions → Expenses. "
+            "Existing linked worker expenses will become visible again, and future worker payments will be included automatically."
+            if enabled
+            else
+            "Worker payments and advances will be hidden from Transactions → Expenses. "
+            "Worker payment and advance history will remain unchanged in Workers."
+        )
+        layout.addWidget(text_label(message))
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        cancel = button("Cancel")
+        apply_button = button("Apply", "primary")
+        actions.addWidget(cancel)
+        actions.addWidget(apply_button)
+        layout.addLayout(actions)
+        cancel.clicked.connect(dialog.reject)
+        apply_button.clicked.connect(dialog.accept)
+        cancel.setDefault(True)
+        return dialog.exec() == QDialog.DialogCode.Accepted
+
+    def _apply_worker_payments_transaction_setting(self) -> None:
+        checked = self.worker_payments_in_transactions.isChecked()
+        saved = bool(getattr(self, "_saved_worker_payments_in_transactions", checked))
+        if checked == saved:
+            self.apply_worker_expense_button.setEnabled(False)
+            return
+        if not self._confirm_worker_payment_transaction_change(checked):
+            self.worker_payments_in_transactions.blockSignals(True)
+            self.worker_payments_in_transactions.setChecked(saved)
+            self.worker_payments_in_transactions.blockSignals(False)
+            self.apply_worker_expense_button.setEnabled(False)
+            self._show_feedback(self.worker_expense_feedback, "Change cancelled. Setting was not modified.")
+            return
+
+        persisted = self.settings_service.set_worker_payments_in_transactions(checked)
+        self._saved_worker_payments_in_transactions = bool(persisted)
+        self.worker_payments_in_transactions.blockSignals(True)
+        self.worker_payments_in_transactions.setChecked(bool(persisted))
+        self.worker_payments_in_transactions.blockSignals(False)
+        self.apply_worker_expense_button.setEnabled(False)
+        message = (
+            "Worker payments and advances will appear in Transactions as expenses."
+            if persisted
+            else "Worker payments and advances are hidden from Transactions. Worker records are unchanged."
+        )
+        self._show_feedback(self.worker_expense_feedback, message)
+        self.worker_transaction_setting_changed.emit(bool(persisted))
+
+    def _liability_payments_transaction_toggled(self, checked: bool) -> None:
+        saved = bool(getattr(self, "_saved_liability_payments_in_transactions", checked))
+        changed = bool(checked) != saved
+        self.apply_liability_expense_button.setEnabled(changed)
+        if changed:
+            self._show_feedback(
+                self.liability_expense_feedback,
+                "Unsaved change — click Apply to update liability-payment expense visibility.",
+            )
+        else:
+            self.liability_expense_feedback.setVisible(False)
+
+    def _confirm_liability_payment_transaction_change(self, enabled: bool) -> bool:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Apply Liability Payment Setting")
+        dialog.setModal(True)
+        dialog.setMinimumWidth(520)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(SPACE["lg"], SPACE["lg"], SPACE["lg"], SPACE["lg"])
+        layout.setSpacing(SPACE["md"])
+        layout.addWidget(text_label("Apply this setting?", "heading"))
+        message = (
+            "Liability payments will appear in Transactions → Expenses. "
+            "Existing linked liability expenses will become visible again, and future liability payments will be included automatically."
+            if enabled
+            else
+            "Liability payments will be hidden from Transactions → Expenses. "
+            "Liability payment history will remain unchanged in Liabilities."
+        )
+        layout.addWidget(text_label(message))
+        actions = QHBoxLayout()
+        actions.addStretch(1)
+        cancel = button("Cancel")
+        apply_button = button("Apply", "primary")
+        actions.addWidget(cancel)
+        actions.addWidget(apply_button)
+        layout.addLayout(actions)
+        cancel.clicked.connect(dialog.reject)
+        apply_button.clicked.connect(dialog.accept)
+        cancel.setDefault(True)
+        return dialog.exec() == QDialog.DialogCode.Accepted
+
+    def _apply_liability_payments_transaction_setting(self) -> None:
+        checked = self.liability_payments_in_transactions.isChecked()
+        saved = bool(getattr(self, "_saved_liability_payments_in_transactions", checked))
+        if checked == saved:
+            self.apply_liability_expense_button.setEnabled(False)
+            return
+        if not self._confirm_liability_payment_transaction_change(checked):
+            self.liability_payments_in_transactions.blockSignals(True)
+            self.liability_payments_in_transactions.setChecked(saved)
+            self.liability_payments_in_transactions.blockSignals(False)
+            self.apply_liability_expense_button.setEnabled(False)
+            self._show_feedback(
+                self.liability_expense_feedback,
+                "Change cancelled. Setting was not modified.",
+            )
+            return
+
+        persisted = self.settings_service.set_liability_payments_in_transactions(checked)
+        self._saved_liability_payments_in_transactions = bool(persisted)
+        self.liability_payments_in_transactions.blockSignals(True)
+        self.liability_payments_in_transactions.setChecked(bool(persisted))
+        self.liability_payments_in_transactions.blockSignals(False)
+        self.apply_liability_expense_button.setEnabled(False)
+        message = (
+            "Liability payments will appear in Transactions as expenses."
+            if persisted
+            else "Liability payments are hidden from Transactions. Liability records are unchanged."
+        )
+        self._show_feedback(self.liability_expense_feedback, message)
+        self.liability_transaction_setting_changed.emit(bool(persisted))
 
     def _save_currency(self) -> None:
         code = str(self.currency_combo.currentData() or "")
