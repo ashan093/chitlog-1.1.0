@@ -72,7 +72,7 @@ publish_output/
 *.sqlite-shm
 *.sqlite-wal
 *.sqlcipher
-data/
+/data/
 user_data/
 userdata/
 app_data/
@@ -159,3 +159,9 @@ temp_screenshots/
 
 # Local patch safety backups
 _chitlog_backup_before_*/
+
+# Legacy local data-layer backup; not production source
+/chitlog/data/database_old_4.py
+
+# Local patch backup artifacts
+/patch-backups/
