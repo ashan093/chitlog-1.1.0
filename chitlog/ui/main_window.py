@@ -39,6 +39,7 @@ from chitlog.ui.theme import SCOOTER, SAPPHIRE, SPACE, resolve_theme, stylesheet
 from chitlog.ui.widgets import Background, button, text_label
 from chitlog.ui.advertisement_banner import AdvertisementBanner
 from chitlog.ui.notification_controller import DesktopNotificationController
+from chitlog.ui.update_notification_banner import UpdateNotificationBanner
 
 
 NAV_ITEMS = (
@@ -430,6 +431,18 @@ class MainWindow(Background):
             topbar.addWidget(choice)
         main_layout.addLayout(topbar)
 
+        # Global updater notice. It stays collapsed unless the shared secure
+        # update runner returns a verified newer release.
+        self.update_notification_banner = UpdateNotificationBanner(
+            self.main_panel
+        )
+        main_layout.addWidget(self.update_notification_banner)
+
+        if self.update_check_runner is not None:
+            self.update_check_runner.succeeded.connect(
+                self._secure_update_check_succeeded
+            )
+
         self.notification_controller = (
             DesktopNotificationController(
                 self.notification_service,
@@ -692,6 +705,14 @@ class MainWindow(Background):
         # visual-only pass once so newly created buttons/cards get responsive
         # sizing immediately. Settings remains excluded inside Step 23 polish.
         QTimer.singleShot(0, lambda: apply_step23_polish(self))
+
+    def _secure_update_check_succeeded(self, outcome) -> None:
+        """Present only verified update decisions from the shared runner."""
+
+        decision = getattr(outcome, "decision", None)
+        if decision is None:
+            return
+        self.update_notification_banner.present(decision)
 
     def _connect_system_theme_updates(self) -> None:
         """Follow live Windows Light/Dark changes while System mode is selected."""
