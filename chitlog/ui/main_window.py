@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMessageBox,
     QPushButton,
     QAbstractScrollArea,
     QScrollArea,
@@ -249,6 +250,7 @@ class MainWindow(Background):
         update_preferences_service=None,
         update_check_runner=None,
         update_download_runner=None,
+        update_install_runner=None,
         lazy_pages: bool = False,
         worker_service=None,
         currency_code: str = "LKR",
@@ -271,6 +273,9 @@ class MainWindow(Background):
         self.update_preferences_service = update_preferences_service
         self.update_check_runner = update_check_runner
         self.update_download_runner = update_download_runner
+        self.update_install_runner = update_install_runner
+        self._verified_update_outcome = None
+        self._verified_installer_artifact = None
         self.lazy_pages = bool(lazy_pages)
         self._lazy_unloaded_pages: set[str] = set()
         self._freshly_built_pages: set[str] = set()
@@ -454,6 +459,17 @@ class MainWindow(Background):
             )
             self.update_download_runner.failed.connect(
                 self._update_download_failed
+            )
+
+        if self.update_install_runner is not None:
+            self.update_notification_banner.install_requested.connect(
+                self._start_update_install
+            )
+            self.update_install_runner.succeeded.connect(
+                self._update_install_started
+            )
+            self.update_install_runner.failed.connect(
+                self._update_install_failed
             )
 
         self.notification_controller = (
@@ -726,6 +742,15 @@ class MainWindow(Background):
         if decision is None:
             return
 
+        self._verified_installer_artifact = None
+        if (
+            getattr(decision, "update_available", False)
+            and getattr(outcome, "manifest", None) is not None
+        ):
+            self._verified_update_outcome = outcome
+        else:
+            self._verified_update_outcome = None
+
         self.update_notification_banner.present(decision)
 
         if getattr(decision, "update_available", False):
@@ -744,23 +769,125 @@ class MainWindow(Background):
         if runner is None or runner.running:
             return
 
+        self._verified_installer_artifact = None
         if runner.start(decision):
             self.update_notification_banner.begin_download()
 
     def _update_download_succeeded(self, artifact) -> None:
-        """Show that the installer is downloaded and cryptographically checked."""
+        """Offer install only when the signed handoff path is also available."""
 
-        self.update_notification_banner.show_download_ready(artifact)
+        self._verified_installer_artifact = artifact
+        outcome = self._verified_update_outcome
+        runner = self.update_install_runner
+
+        can_install = bool(
+            runner is not None
+            and not getattr(runner, "running", False)
+            and getattr(runner, "available", False)
+            and outcome is not None
+            and getattr(outcome, "manifest", None) is not None
+            and getattr(artifact, "version", None)
+            == getattr(outcome.decision, "available_version", None)
+        )
+
+        self.update_notification_banner.show_download_ready(
+            artifact,
+            install_enabled=can_install,
+        )
 
     def _update_download_failed(self, failure) -> None:
         """Keep ChitLog usable and expose only a safe retry message."""
 
+        self._verified_installer_artifact = None
         message = getattr(
             failure,
             "message",
             "The installer download could not be completed safely.",
         )
         self.update_notification_banner.show_download_failure(message)
+
+    def _confirm_update_install(self, decision) -> bool:
+        """Require one explicit confirmation before ChitLog closes for update."""
+
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Icon.Question)
+        dialog.setWindowTitle("Install ChitLog update")
+        dialog.setText(
+            f"Install ChitLog {decision.available_version}?"
+        )
+        dialog.setInformativeText(
+            "ChitLog will close only after the standalone updater starts "
+            "successfully. The verified installer will then run through "
+            "Windows. Save any unfinished form input before continuing."
+        )
+        install_button = dialog.addButton(
+            "Install Update",
+            QMessageBox.ButtonRole.AcceptRole,
+        )
+        cancel_button = dialog.addButton(
+            "Cancel",
+            QMessageBox.ButtonRole.RejectRole,
+        )
+        dialog.setDefaultButton(cancel_button)
+        dialog.exec()
+        return dialog.clickedButton() is install_button
+
+    def _start_update_install(self, decision) -> None:
+        """Create the signed handoff and start the standalone updater."""
+
+        runner = self.update_install_runner
+        outcome = self._verified_update_outcome
+        artifact = self._verified_installer_artifact
+
+        if runner is None or getattr(runner, "running", False):
+            return
+
+        if (
+            outcome is None
+            or getattr(outcome, "manifest", None) is None
+            or outcome.decision != decision
+            or artifact is None
+            or getattr(artifact, "version", None) != decision.available_version
+        ):
+            self.update_notification_banner.show_install_failure(
+                "The verified update state is no longer complete. Run Check "
+                "for Updates again before installing."
+            )
+            return
+
+        if not getattr(runner, "available", False):
+            self.update_notification_banner.show_install_failure(
+                "The standalone ChitLog updater is not available in this "
+                "build. ChitLog was not closed."
+            )
+            return
+
+        if not self._confirm_update_install(decision):
+            return
+
+        if runner.start(outcome, artifact):
+            self.update_notification_banner.begin_install()
+
+    def _update_install_started(self, result) -> None:
+        """Close ChitLog only after the standalone updater really started."""
+
+        self.feedback.setText(
+            "Standalone updater started. Closing ChitLog safely..."
+        )
+        app = QApplication.instance()
+        if app is not None:
+            QTimer.singleShot(0, app.quit)
+
+    def _update_install_failed(self, failure) -> None:
+        """Keep ChitLog open if handoff creation or updater launch fails."""
+
+        message = getattr(
+            failure,
+            "message",
+            "The standalone updater could not be started safely. ChitLog "
+            "was not closed.",
+        )
+        self.update_notification_banner.show_install_failure(message)
 
     def _connect_system_theme_updates(self) -> None:
         """Follow live Windows Light/Dark changes while System mode is selected."""
@@ -1131,6 +1258,7 @@ def create_window(
     update_preferences_service=None,
     update_check_runner=None,
     update_download_runner=None,
+    update_install_runner=None,
     lazy_pages: bool = False,
     worker_service=None,
     currency_code: str = "LKR",
@@ -1154,6 +1282,7 @@ def create_window(
         update_preferences_service=update_preferences_service,
         update_check_runner=update_check_runner,
         update_download_runner=update_download_runner,
+        update_install_runner=update_install_runner,
         lazy_pages=lazy_pages,
         worker_service=worker_service,
         currency_code=currency_code,

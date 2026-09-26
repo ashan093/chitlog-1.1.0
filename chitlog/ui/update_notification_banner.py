@@ -26,6 +26,7 @@ class UpdateNotificationBanner(QFrame):
     """One unobtrusive session-scoped notification for verified updates."""
 
     update_requested = Signal(object)
+    install_requested = Signal(object)
     dismissed = Signal(str)
 
     def __init__(self, parent=None) -> None:
@@ -39,6 +40,7 @@ class UpdateNotificationBanner(QFrame):
 
         self._decision: UpdateDecision | None = None
         self._dismissed_versions: set[str] = set()
+        self._installer_ready = False
 
         root = QHBoxLayout(self)
         root.setContentsMargins(
@@ -130,6 +132,7 @@ class UpdateNotificationBanner(QFrame):
             return False
 
         self._decision = decision
+        self._installer_ready = False
         self.update_now_button.setText("Update Now")
         self.update_now_button.setEnabled(False)
         self.later_button.setEnabled(True)
@@ -162,6 +165,7 @@ class UpdateNotificationBanner(QFrame):
 
     def clear(self) -> None:
         self._decision = None
+        self._installer_ready = False
         self.hide()
 
     def dismiss_for_session(self) -> None:
@@ -185,6 +189,7 @@ class UpdateNotificationBanner(QFrame):
         if decision is None:
             return
 
+        self._installer_ready = False
         self.eyebrow_label.setText("DOWNLOADING UPDATE")
         self.title_label.setText(
             f"Downloading ChitLog {decision.available_version}"
@@ -197,21 +202,71 @@ class UpdateNotificationBanner(QFrame):
         self.update_now_button.setEnabled(False)
         self.later_button.setEnabled(False)
 
-    def show_download_ready(self, artifact) -> None:
+    def show_download_ready(
+        self,
+        artifact,
+        *,
+        install_enabled: bool = False,
+    ) -> None:
         decision = self._decision
         if decision is None:
             return
 
+        self._installer_ready = bool(install_enabled)
         self.eyebrow_label.setText("UPDATE VERIFIED")
         self.title_label.setText(
             f"ChitLog {decision.available_version} is ready"
         )
-        self.message_label.setText(
-            "The installer passed the signed size and SHA-256 checks. "
-            "Installation will be connected in the next updater stage."
+
+        if self._installer_ready:
+            self.message_label.setText(
+                "The installer passed the signed size and SHA-256 checks. "
+                "Install Update will start the standalone updater and then "
+                "close ChitLog safely."
+            )
+            self.update_now_button.setText("Install Update")
+            self.update_now_button.setEnabled(True)
+        else:
+            self.message_label.setText(
+                "The installer passed the signed size and SHA-256 checks. "
+                "The standalone updater is not available in this build yet."
+            )
+            self.update_now_button.setText("Verified")
+            self.update_now_button.setEnabled(False)
+
+        self.later_button.setEnabled(True)
+
+    def begin_install(self) -> None:
+        decision = self._decision
+        if decision is None:
+            return
+
+        self._installer_ready = False
+        self.eyebrow_label.setText("STARTING UPDATER")
+        self.title_label.setText(
+            f"Preparing ChitLog {decision.available_version}"
         )
-        self.update_now_button.setText("Verified")
+        self.message_label.setText(
+            "ChitLog is preparing the signed handoff and standalone updater. "
+            "This window will close only after the updater starts safely."
+        )
+        self.update_now_button.setText("Starting...")
         self.update_now_button.setEnabled(False)
+        self.later_button.setEnabled(False)
+
+    def show_install_failure(self, message: str) -> None:
+        decision = self._decision
+        if decision is None:
+            return
+
+        self._installer_ready = True
+        self.eyebrow_label.setText("UPDATE READY")
+        self.title_label.setText(
+            f"ChitLog {decision.available_version} is still ready"
+        )
+        self.message_label.setText(str(message))
+        self.update_now_button.setText("Install Update")
+        self.update_now_button.setEnabled(True)
         self.later_button.setEnabled(True)
 
     def show_download_failure(self, message: str) -> None:
@@ -219,6 +274,7 @@ class UpdateNotificationBanner(QFrame):
         if decision is None:
             return
 
+        self._installer_ready = False
         self.eyebrow_label.setText("UPDATE DOWNLOAD")
         self.title_label.setText(
             f"ChitLog {decision.available_version} was not downloaded"
@@ -230,8 +286,14 @@ class UpdateNotificationBanner(QFrame):
 
     def _request_update(self) -> None:
         decision = self._decision
-        if decision is not None:
-            self.update_requested.emit(decision)
+        if decision is None:
+            return
+
+        if self._installer_ready:
+            self.install_requested.emit(decision)
+            return
+
+        self.update_requested.emit(decision)
 
     @staticmethod
     def _release_notes_url(decision: UpdateDecision) -> QUrl | None:

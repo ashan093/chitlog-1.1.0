@@ -50,6 +50,7 @@ from chitlog.ui.setup_wizard import SetupWizard
 from chitlog.ui.startup_update_scheduler import StartupUpdateCheckScheduler
 from chitlog.ui.update_check_runner import UpdateCheckRunner
 from chitlog.ui.update_download_runner import UpdateDownloadRunner
+from chitlog.ui.update_install_runner import UpdateInstallRunner
 
 # STEP24_GLOBAL_WINDOW_ICON_HELPER_BEGIN
 def _apply_chitlog_window_icon(assets) -> None:
@@ -165,6 +166,7 @@ def main() -> int:
     update_schedule_service = None
     update_check_runner = None
     update_download_runner = None
+    update_install_runner = None
     startup_update_scheduler = None
     liability_service = None
     report_service = None
@@ -188,6 +190,11 @@ def main() -> int:
         # no network work until the user explicitly starts a verified update.
         update_download_runner = UpdateDownloadRunner(
             paths.cache / "updates",
+            app,
+        )
+        update_install_runner = UpdateInstallRunner(
+            paths.cache / "updates",
+            Path(sys.executable).resolve(),
             app,
         )
 
@@ -394,6 +401,7 @@ def main() -> int:
             update_preferences_service=update_preferences_service,
             update_check_runner=update_check_runner,
             update_download_runner=update_download_runner,
+            update_install_runner=update_install_runner,
             lazy_pages=True,
             worker_service=worker_service,
             worker_work_service=worker_work_service,
