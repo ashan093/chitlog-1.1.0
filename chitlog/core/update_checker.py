@@ -21,11 +21,14 @@ from chitlog.core.update_decision import (
     UpdateDecisionError,
     decide_update,
 )
-from chitlog.core.update_manifest import UpdateManifestError
+from chitlog.core.update_manifest import (
+    SignedUpdateManifest,
+    UpdateManifestError,
+)
 from chitlog.core.update_signature import (
     TRUSTED_UPDATE_PUBLIC_KEYS,
     UpdateSignatureError,
-    parse_and_verify_manifest,
+    verify_manifest_signature,
 )
 from chitlog.core.update_transport import (
     UpdateCheckDisabledError,
@@ -61,9 +64,21 @@ class UpdateCheckError(RuntimeError):
 
 @dataclass(frozen=True, slots=True)
 class UpdateCheckOutcome:
-    """Successful secure update check result."""
+    """Successful secure update check result.
+
+    ``manifest`` preserves the exact signed envelope that was verified.  Later
+    updater stages can hand this evidence to the standalone updater so it can
+    independently re-verify the release before installation.
+    """
 
     decision: UpdateDecision
+    manifest: SignedUpdateManifest | None = None
+
+    def __post_init__(self) -> None:
+        if self.manifest is not None and self.manifest.payload != self.decision.payload:
+            raise ValueError(
+                "Verified manifest payload does not match the update decision."
+            )
 
     @property
     def update_available(self) -> bool:
@@ -104,8 +119,9 @@ def check_for_updates(
         ) from exc
 
     try:
-        verified_payload = parse_and_verify_manifest(
-            raw_manifest,
+        manifest = SignedUpdateManifest.from_json_bytes(raw_manifest)
+        verified_payload = verify_manifest_signature(
+            manifest,
             trusted_keys=trusted_keys,
         )
     except (UpdateManifestError, UpdateSignatureError) as exc:
@@ -126,4 +142,7 @@ def check_for_updates(
             "The verified update information conflicts with local policy.",
         ) from exc
 
-    return UpdateCheckOutcome(decision=decision)
+    return UpdateCheckOutcome(
+        decision=decision,
+        manifest=manifest,
+    )
