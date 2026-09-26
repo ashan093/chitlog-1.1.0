@@ -194,6 +194,7 @@ def test_final_verification_cannot_swap_to_another_path(tmp_path, monkeypatch):
 
 def test_main_maps_successful_installer_result(monkeypatch, tmp_path, capsys):
     import chitlog.updater as updater
+    from chitlog.core.update_application_relaunch import ApplicationRelaunchResult
 
     verified = fake_verified(tmp_path)
     monkeypatch.setattr(
@@ -209,6 +210,14 @@ def test_main_maps_successful_installer_result(monkeypatch, tmp_path, capsys):
             exit_code=0,
         ),
     )
+    monkeypatch.setattr(
+        updater,
+        "relaunch_updated_application",
+        lambda value: ApplicationRelaunchResult(
+            application_path=value.application_path,
+            process_id=1234,
+        ),
+    )
 
     handoff = (tmp_path / "handoff.json").resolve()
     code = main(["--handoff", str(handoff)])
@@ -216,6 +225,7 @@ def test_main_maps_successful_installer_result(monkeypatch, tmp_path, capsys):
 
     assert code == EXIT_INSTALL_SUCCEEDED
     assert "completed successfully" in captured.out
+    assert "restarted as process 1234" in captured.out
 
 
 def test_main_maps_uac_cancel_without_reporting_success(

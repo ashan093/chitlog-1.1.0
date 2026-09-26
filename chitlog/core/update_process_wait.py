@@ -25,6 +25,10 @@ class UpdateProcessTimeoutError(UpdateProcessWaitError):
     """Raised when ChitLog does not exit within the allowed time."""
 
 
+class UpdateProcessIdentityError(UpdateProcessWaitError):
+    """Raised when the updater cannot identify the originating process."""
+
+
 def _validate_pid(parent_pid: int) -> int:
     if (
         isinstance(parent_pid, bool)
@@ -57,6 +61,104 @@ def _validate_timeout(timeout_seconds: float) -> float:
             "timeout_seconds is outside the allowed updater wait range."
         )
     return value
+
+
+def _resolve_windows_process_image(parent_pid: int) -> Path:
+    process_query_limited_information = 0x1000
+    error_invalid_parameter = 87
+    max_path_chars = 32768
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+
+    open_process = kernel32.OpenProcess
+    open_process.argtypes = [
+        wintypes.DWORD,
+        wintypes.BOOL,
+        wintypes.DWORD,
+    ]
+    open_process.restype = wintypes.HANDLE
+
+    query_full_process_image_name = kernel32.QueryFullProcessImageNameW
+    query_full_process_image_name.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    query_full_process_image_name.restype = wintypes.BOOL
+
+    close_handle = kernel32.CloseHandle
+    close_handle.argtypes = [wintypes.HANDLE]
+    close_handle.restype = wintypes.BOOL
+
+    handle = open_process(
+        process_query_limited_information,
+        False,
+        parent_pid,
+    )
+    if not handle:
+        error = ctypes.get_last_error()
+        if error == error_invalid_parameter:
+            raise UpdateProcessIdentityError(
+                "The originating ChitLog process exited before it could be identified."
+            )
+        raise UpdateProcessIdentityError(
+            "Standalone updater could not identify the originating ChitLog process."
+        )
+
+    try:
+        buffer = ctypes.create_unicode_buffer(max_path_chars)
+        size = wintypes.DWORD(max_path_chars)
+        if not query_full_process_image_name(
+            handle,
+            0,
+            buffer,
+            ctypes.byref(size),
+        ):
+            raise UpdateProcessIdentityError(
+                "Windows could not read the originating ChitLog executable path."
+            )
+
+        value = buffer.value
+        if not value:
+            raise UpdateProcessIdentityError(
+                "Windows returned an empty originating executable path."
+            )
+
+        try:
+            return Path(value).resolve(strict=True)
+        except OSError as exc:
+            raise UpdateProcessIdentityError(
+                "The originating ChitLog executable path could not be resolved."
+            ) from exc
+    finally:
+        close_handle(handle)
+
+
+def _resolve_portable_process_image(parent_pid: int) -> Path:
+    """Development/test fallback for hosts with /proc."""
+
+    if os.name != "posix" or not Path("/proc").is_dir():
+        raise UpdateProcessIdentityError(
+            "Process-image lookup is supported only on Windows in packaged ChitLog."
+        )
+
+    link = Path(f"/proc/{parent_pid}/exe")
+    try:
+        return link.resolve(strict=True)
+    except OSError as exc:
+        raise UpdateProcessIdentityError(
+            "The originating process image could not be resolved."
+        ) from exc
+
+
+def resolve_process_image_path(parent_pid: int) -> Path:
+    """Return the OS-reported executable path for the originating process."""
+
+    pid = _validate_pid(parent_pid)
+    if os.name == "nt":
+        return _resolve_windows_process_image(pid)
+    return _resolve_portable_process_image(pid)
 
 
 def _wait_windows(parent_pid: int, timeout_seconds: float) -> None:

@@ -21,7 +21,12 @@ from chitlog.core.update_handoff import (
 )
 from chitlog.core.update_process_wait import (
     UpdateProcessWaitError,
+    resolve_process_image_path,
     wait_for_process_exit,
+)
+from chitlog.core.update_application_relaunch import (
+    ApplicationRelaunchError,
+    relaunch_updated_application,
 )
 from chitlog.core.update_installer_execution import (
     InstallerConsentCancelledError,
@@ -37,6 +42,7 @@ EXIT_PARENT_WAIT_FAILED = 21
 EXIT_HANDOFF_CHANGED = 22
 EXIT_INSTALLER_FAILED = 23
 EXIT_INSTALLER_CANCELLED = 24
+EXIT_RELAUNCH_FAILED = 25
 
 
 class UpdatePreparationError(RuntimeError):
@@ -49,6 +55,7 @@ class UpdateHandoffChangedError(UpdatePreparationError):
 
 HandoffVerifier = Callable[[str | Path], VerifiedUpdateHandoff]
 ParentWaiter = Callable[[int], None]
+ProcessImageResolver = Callable[[int], Path]
 
 
 def prepare_standalone_update(
@@ -56,11 +63,22 @@ def prepare_standalone_update(
     *,
     verifier: HandoffVerifier = load_and_verify_update_handoff,
     waiter: ParentWaiter = wait_for_process_exit,
+    process_image_resolver: ProcessImageResolver = resolve_process_image_path,
 ) -> VerifiedUpdateHandoff:
     """Verify, wait for ChitLog to exit, then verify everything again."""
 
     before = verifier(handoff_path)
     parent_pid = before.handoff.parent_pid
+
+    # The outer handoff contains a local application path and is not itself
+    # signed. Bind that path to the OS-reported executable of the still-running
+    # ChitLog parent process before allowing the updater to continue.
+    parent_image = process_image_resolver(parent_pid)
+    expected_application = before.application_path.resolve(strict=False)
+    if parent_image.resolve(strict=False) != expected_application:
+        raise UpdateHandoffChangedError(
+            "Update handoff application path does not match the originating ChitLog process."
+        )
 
     waiter(parent_pid)
 
@@ -151,9 +169,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return EXIT_INSTALLER_FAILED
 
+    try:
+        relaunch = relaunch_updated_application(verified)
+    except ApplicationRelaunchError:
+        sys.stderr.write(
+            f"ChitLog {verified.payload.version} was installed successfully, "
+            "but the updated application could not be restarted automatically. "
+            "Start ChitLog manually.\n"
+        )
+        return EXIT_RELAUNCH_FAILED
+
     sys.stdout.write(
         f"ChitLog {verified.payload.version} installer completed successfully "
-        f"with exit code {result.exit_code}.\n"
+        f"with exit code {result.exit_code}; ChitLog restarted as process "
+        f"{relaunch.process_id}.\n"
     )
     return EXIT_INSTALL_SUCCEEDED
 

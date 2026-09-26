@@ -13,6 +13,7 @@ import pytest
 from chitlog.core.update_process_wait import (
     UpdateProcessTimeoutError,
     UpdateProcessWaitError,
+    resolve_process_image_path,
     wait_for_process_exit,
 )
 from chitlog.updater import (
@@ -26,26 +27,39 @@ from chitlog.updater import (
 )
 
 
-def fake_verified(*, pid=12345, version="1.2.0", marker="same"):
+def fake_verified(
+    *,
+    pid=12345,
+    version="1.2.0",
+    marker="same",
+    application_path=None,
+):
     handoff = SimpleNamespace(
         parent_pid=pid,
         marker=marker,
     )
     payload = SimpleNamespace(version=version)
+    if application_path is None:
+        application_path = (Path.cwd() / "ChitLog.exe").resolve()
     return SimpleNamespace(
         handoff=handoff,
         payload=payload,
+        application_path=Path(application_path),
     )
 
 
 def test_prepare_verifies_before_and_after_wait():
     calls = []
     before = fake_verified()
-    after = fake_verified()
+    after = fake_verified(application_path=before.application_path)
 
     def verifier(path):
         calls.append(("verify", Path(path)))
-        return before if len(calls) == 1 else after
+        return before if sum(1 for item in calls if item[0] == "verify") == 1 else after
+
+    def image_resolver(pid):
+        calls.append(("identity", pid))
+        return before.application_path
 
     def waiter(pid):
         calls.append(("wait", pid))
@@ -54,11 +68,13 @@ def test_prepare_verifies_before_and_after_wait():
         Path("handoff.json"),
         verifier=verifier,
         waiter=waiter,
+        process_image_resolver=image_resolver,
     )
 
     assert result is after
     assert calls == [
         ("verify", Path("handoff.json")),
+        ("identity", 12345),
         ("wait", 12345),
         ("verify", Path("handoff.json")),
     ]
@@ -74,6 +90,7 @@ def test_handoff_change_during_wait_is_rejected():
             Path("handoff.json"),
             verifier=lambda path: next(values),
             waiter=lambda pid: None,
+            process_image_resolver=lambda pid: before.application_path,
         )
 
 
@@ -88,6 +105,7 @@ def test_payload_change_during_wait_is_rejected():
             Path("handoff.json"),
             verifier=lambda path: next(values),
             waiter=lambda pid: None,
+            process_image_resolver=lambda pid: before.application_path,
         )
 
 
@@ -107,9 +125,25 @@ def test_wait_failure_stops_before_second_verification():
             Path("handoff.json"),
             verifier=verifier,
             waiter=waiter,
+            process_image_resolver=lambda pid: calls.append("identity")
+            or fake_verified().application_path,
         )
 
-    assert calls == ["verify", "wait"]
+    assert calls == ["verify", "identity", "wait"]
+
+
+def test_parent_process_image_must_match_handoff_application_path():
+    verified = fake_verified()
+
+    with pytest.raises(UpdateHandoffChangedError, match="originating"):
+        prepare_standalone_update(
+            Path("handoff.json"),
+            verifier=lambda path: verified,
+            waiter=lambda pid: None,
+            process_image_resolver=lambda pid: (
+                Path.cwd() / "Other.exe"
+            ).resolve(),
+        )
 
 
 @pytest.mark.parametrize("pid", [0, -1, True, 0x100000000])
@@ -134,6 +168,24 @@ def test_nonexistent_process_returns_without_termination_or_launch():
         wait_for_process_exit(0xFFFFFFFE, timeout_seconds=0.05)
     except UpdateProcessTimeoutError:
         pytest.skip("Selected high PID unexpectedly exists on this host.")
+
+
+def test_real_process_image_resolution_matches_child_executable():
+    child = subprocess.Popen(
+        [
+            sys.executable,
+            "-S",
+            "-c",
+            "import time; time.sleep(0.5)",
+        ]
+    )
+    try:
+        resolved = resolve_process_image_path(child.pid)
+        assert resolved == Path(sys.executable).resolve(strict=True)
+    finally:
+        if child.poll() is None:
+            child.terminate()
+        child.wait(timeout=3)
 
 
 def test_real_process_wait_observes_exit_without_terminating():
@@ -232,11 +284,12 @@ def test_main_maps_wait_failure_to_fail_closed_exit(monkeypatch, tmp_path, capsy
     assert "secret" not in captured.err
 
 
-def test_main_delegates_only_after_safe_preparation(monkeypatch, tmp_path, capsys):
+def test_main_delegates_install_then_relaunch(monkeypatch, tmp_path, capsys):
     import chitlog.updater as updater
+    from chitlog.core.update_application_relaunch import ApplicationRelaunchResult
     from chitlog.core.update_installer_execution import InstallerExecutionResult
 
-    verified = fake_verified()
+    verified = fake_verified(application_path=tmp_path / "ChitLog.exe")
     handoff = (tmp_path / "handoff.json").resolve()
     calls = []
 
@@ -254,6 +307,15 @@ def test_main_delegates_only_after_safe_preparation(monkeypatch, tmp_path, capsy
             exit_code=0,
         ),
     )
+    monkeypatch.setattr(
+        updater,
+        "relaunch_updated_application",
+        lambda value: calls.append(("relaunch", value))
+        or ApplicationRelaunchResult(
+            application_path=tmp_path / "ChitLog.exe",
+            process_id=777,
+        ),
+    )
 
     code = main(["--handoff", str(handoff)])
     captured = capsys.readouterr()
@@ -262,8 +324,9 @@ def test_main_delegates_only_after_safe_preparation(monkeypatch, tmp_path, capsy
     assert calls == [
         ("prepare", handoff),
         ("execute", verified),
+        ("relaunch", verified),
     ]
-    assert "completed successfully" in captured.out
+    assert "restarted as process 777" in captured.out
 
 
 def test_step7b_production_sources_do_not_launch_or_terminate_processes():
