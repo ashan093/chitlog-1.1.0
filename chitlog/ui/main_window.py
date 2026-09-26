@@ -248,6 +248,7 @@ class MainWindow(Background):
         settings_service=None,
         update_preferences_service=None,
         update_check_runner=None,
+        update_download_runner=None,
         lazy_pages: bool = False,
         worker_service=None,
         currency_code: str = "LKR",
@@ -269,6 +270,7 @@ class MainWindow(Background):
         self.settings_service = settings_service
         self.update_preferences_service = update_preferences_service
         self.update_check_runner = update_check_runner
+        self.update_download_runner = update_download_runner
         self.lazy_pages = bool(lazy_pages)
         self._lazy_unloaded_pages: set[str] = set()
         self._freshly_built_pages: set[str] = set()
@@ -441,6 +443,17 @@ class MainWindow(Background):
         if self.update_check_runner is not None:
             self.update_check_runner.succeeded.connect(
                 self._secure_update_check_succeeded
+            )
+
+        if self.update_download_runner is not None:
+            self.update_notification_banner.update_requested.connect(
+                self._start_update_download
+            )
+            self.update_download_runner.succeeded.connect(
+                self._update_download_succeeded
+            )
+            self.update_download_runner.failed.connect(
+                self._update_download_failed
             )
 
         self.notification_controller = (
@@ -712,7 +725,42 @@ class MainWindow(Background):
         decision = getattr(outcome, "decision", None)
         if decision is None:
             return
+
         self.update_notification_banner.present(decision)
+
+        if getattr(decision, "update_available", False):
+            can_download = (
+                self.update_download_runner is not None
+                and not self.update_download_runner.running
+            )
+            self.update_notification_banner.enable_update_action(
+                can_download
+            )
+
+    def _start_update_download(self, decision) -> None:
+        """Start one background installer download from a verified decision."""
+
+        runner = self.update_download_runner
+        if runner is None or runner.running:
+            return
+
+        if runner.start(decision):
+            self.update_notification_banner.begin_download()
+
+    def _update_download_succeeded(self, artifact) -> None:
+        """Show that the installer is downloaded and cryptographically checked."""
+
+        self.update_notification_banner.show_download_ready(artifact)
+
+    def _update_download_failed(self, failure) -> None:
+        """Keep ChitLog usable and expose only a safe retry message."""
+
+        message = getattr(
+            failure,
+            "message",
+            "The installer download could not be completed safely.",
+        )
+        self.update_notification_banner.show_download_failure(message)
 
     def _connect_system_theme_updates(self) -> None:
         """Follow live Windows Light/Dark changes while System mode is selected."""
@@ -1082,6 +1130,7 @@ def create_window(
     settings_service=None,
     update_preferences_service=None,
     update_check_runner=None,
+    update_download_runner=None,
     lazy_pages: bool = False,
     worker_service=None,
     currency_code: str = "LKR",
@@ -1104,6 +1153,7 @@ def create_window(
         settings_service=settings_service,
         update_preferences_service=update_preferences_service,
         update_check_runner=update_check_runner,
+        update_download_runner=update_download_runner,
         lazy_pages=lazy_pages,
         worker_service=worker_service,
         currency_code=currency_code,

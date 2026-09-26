@@ -76,8 +76,7 @@ class UpdateNotificationBanner(QFrame):
         self.update_now_button = button("Update Now", "primary")
         self.update_now_button.setEnabled(False)
         self.update_now_button.setToolTip(
-            "Secure installer download will be connected in the next "
-            "updater stage."
+            "Download and verify the signed ChitLog installer."
         )
         self.update_now_button.clicked.connect(self._request_update)
         first_row.addWidget(self.update_now_button)
@@ -131,6 +130,9 @@ class UpdateNotificationBanner(QFrame):
             return False
 
         self._decision = decision
+        self.update_now_button.setText("Update Now")
+        self.update_now_button.setEnabled(False)
+        self.later_button.setEnabled(True)
 
         if decision.disposition is UpdateDisposition.REQUIRED_UPDATE:
             self.eyebrow_label.setText("IMPORTANT UPDATE")
@@ -174,9 +176,57 @@ class UpdateNotificationBanner(QFrame):
         self.dismissed.emit(version)
 
     def enable_update_action(self, enabled: bool = True) -> None:
-        """Reserved for the secure downloader stage."""
+        """Enable secure download only when a verified update can be fetched."""
 
         self.update_now_button.setEnabled(bool(enabled))
+
+    def begin_download(self) -> None:
+        decision = self._decision
+        if decision is None:
+            return
+
+        self.eyebrow_label.setText("DOWNLOADING UPDATE")
+        self.title_label.setText(
+            f"Downloading ChitLog {decision.available_version}"
+        )
+        self.message_label.setText(
+            "The installer is downloading and will be verified before it is "
+            "accepted. You can continue using ChitLog."
+        )
+        self.update_now_button.setText("Downloading...")
+        self.update_now_button.setEnabled(False)
+        self.later_button.setEnabled(False)
+
+    def show_download_ready(self, artifact) -> None:
+        decision = self._decision
+        if decision is None:
+            return
+
+        self.eyebrow_label.setText("UPDATE VERIFIED")
+        self.title_label.setText(
+            f"ChitLog {decision.available_version} is ready"
+        )
+        self.message_label.setText(
+            "The installer passed the signed size and SHA-256 checks. "
+            "Installation will be connected in the next updater stage."
+        )
+        self.update_now_button.setText("Verified")
+        self.update_now_button.setEnabled(False)
+        self.later_button.setEnabled(True)
+
+    def show_download_failure(self, message: str) -> None:
+        decision = self._decision
+        if decision is None:
+            return
+
+        self.eyebrow_label.setText("UPDATE DOWNLOAD")
+        self.title_label.setText(
+            f"ChitLog {decision.available_version} was not downloaded"
+        )
+        self.message_label.setText(str(message))
+        self.update_now_button.setText("Try Again")
+        self.update_now_button.setEnabled(True)
+        self.later_button.setEnabled(True)
 
     def _request_update(self) -> None:
         decision = self._decision
