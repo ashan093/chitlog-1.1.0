@@ -295,6 +295,9 @@ class SettingsPage(QWidget):
         )
         update_info.addRow("Automatic installation", self.update_auto_install_label)
         updates_card.body.addLayout(update_info)
+        self.update_auto_check_notice = text_label("", "muted")
+        self.update_auto_check_notice.setWordWrap(True)
+        updates_card.body.addWidget(self.update_auto_check_notice)
         update_actions = QHBoxLayout()
         update_actions.setSpacing(SPACE["sm"])
         self.apply_update_preferences_button = button("Apply", "primary")
@@ -692,12 +695,42 @@ class SettingsPage(QWidget):
         self.update_auto_install_label.setText(
             "On" if snapshot.auto_install_enabled else "Off"
         )
+        self._refresh_auto_check_notice(
+            self._saved_update_auto_check,
+            pending=False,
+        )
         self.update_auto_check.setEnabled(True)
         self.update_channel_combo.setEnabled(True)
         self.apply_update_preferences_button.setEnabled(False)
         self.check_updates_button.setEnabled(
             not self.update_check_runner.running
         )
+
+    def _refresh_auto_check_notice(
+        self,
+        enabled: bool,
+        *,
+        pending: bool,
+    ) -> None:
+        """Explain exactly what the Automatic checks preference means."""
+
+        prefix = "After Apply: " if pending else ""
+        if enabled:
+            message = (
+                f"{prefix}Automatic checks are on. ChitLog may contact the "
+                "configured update service when the saved interval is due. "
+                "Financial records are not sent."
+            )
+        else:
+            message = (
+                f"{prefix}Automatic checks are off. ChitLog will not contact "
+                "the update service automatically, so it cannot know whether "
+                "a newer version exists until you use Check for Updates "
+                "manually."
+            )
+
+        self.update_auto_check_notice.setText(message)
+        self.update_auto_check_notice.setVisible(True)
 
     def _update_preferences_controls_changed(self, *_args) -> None:
         if self.update_preferences_service is None:
@@ -712,6 +745,10 @@ class SettingsPage(QWidget):
         self.apply_update_preferences_button.setEnabled(changed)
         self.check_updates_button.setEnabled(
             not changed and not self.update_check_runner.running
+        )
+        self._refresh_auto_check_notice(
+            current_auto,
+            pending=changed,
         )
         if changed:
             self._show_feedback(
@@ -736,6 +773,10 @@ class SettingsPage(QWidget):
             not self.update_check_runner.running
         )
         state = "enabled" if saved.auto_check_enabled else "disabled"
+        self._refresh_auto_check_notice(
+            bool(saved.auto_check_enabled),
+            pending=False,
+        )
         self._show_feedback(
             self.update_preferences_feedback,
             f"Update preferences saved. Automatic checks are {state}; channel: {saved.channel}.",
@@ -781,13 +822,14 @@ class SettingsPage(QWidget):
         elif decision.disposition is UpdateDisposition.REQUIRED_UPDATE:
             message = (
                 f"ChitLog {decision.available_version} is marked as a "
-                "required update. Download and installation are not "
-                "connected yet."
+                "required update. The verified update notification in "
+                "the main window has the available release actions."
             )
         else:
             message = (
                 f"ChitLog {decision.available_version} is available. "
-                "Download and installation are not connected yet."
+                "The verified update notification in the main window "
+                "has the available release actions."
             )
 
         self._show_feedback(
