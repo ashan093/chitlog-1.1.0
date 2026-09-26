@@ -18,7 +18,7 @@ from chitlog.core.update_process_wait import (
 from chitlog.updater import (
     EXIT_HANDOFF_REJECTED,
     EXIT_PARENT_WAIT_FAILED,
-    EXIT_READY_NO_EXECUTION,
+    EXIT_INSTALL_SUCCEEDED,
     UpdateHandoffChangedError,
     build_argument_parser,
     main,
@@ -232,22 +232,38 @@ def test_main_maps_wait_failure_to_fail_closed_exit(monkeypatch, tmp_path, capsy
     assert "secret" not in captured.err
 
 
-def test_main_reports_ready_but_explicitly_does_not_install(monkeypatch, tmp_path, capsys):
+def test_main_delegates_only_after_safe_preparation(monkeypatch, tmp_path, capsys):
     import chitlog.updater as updater
+    from chitlog.core.update_installer_execution import InstallerExecutionResult
 
+    verified = fake_verified()
     handoff = (tmp_path / "handoff.json").resolve()
+    calls = []
+
     monkeypatch.setattr(
         updater,
         "prepare_standalone_update",
-        lambda path: fake_verified(),
+        lambda path: calls.append(("prepare", path)) or verified,
+    )
+    monkeypatch.setattr(
+        updater,
+        "execute_verified_installer",
+        lambda value: calls.append(("execute", value))
+        or InstallerExecutionResult(
+            installer_path=tmp_path / "ChitLog-1.2.0-Setup.exe",
+            exit_code=0,
+        ),
     )
 
     code = main(["--handoff", str(handoff)])
     captured = capsys.readouterr()
 
-    assert code == EXIT_READY_NO_EXECUTION
-    assert "Version 1.2.0 is ready" in captured.out
-    assert "execution is not enabled" in captured.out
+    assert code == EXIT_INSTALL_SUCCEEDED
+    assert calls == [
+        ("prepare", handoff),
+        ("execute", verified),
+    ]
+    assert "completed successfully" in captured.out
 
 
 def test_step7b_production_sources_do_not_launch_or_terminate_processes():

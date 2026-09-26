@@ -23,12 +23,20 @@ from chitlog.core.update_process_wait import (
     UpdateProcessWaitError,
     wait_for_process_exit,
 )
+from chitlog.core.update_installer_execution import (
+    InstallerConsentCancelledError,
+    InstallerExecutionError,
+    InstallerExitCodeError,
+    execute_verified_installer,
+)
 
 
-EXIT_READY_NO_EXECUTION = 0
+EXIT_INSTALL_SUCCEEDED = 0
 EXIT_HANDOFF_REJECTED = 20
 EXIT_PARENT_WAIT_FAILED = 21
 EXIT_HANDOFF_CHANGED = 22
+EXIT_INSTALLER_FAILED = 23
+EXIT_INSTALLER_CANCELLED = 24
 
 
 class UpdatePreparationError(RuntimeError):
@@ -77,8 +85,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="ChitLogUpdater",
         description=(
-            "Verify a ChitLog update handoff and wait for ChitLog to exit. "
-            "Installer execution is not enabled in this build."
+            "Verify a ChitLog update handoff, wait for ChitLog to exit, "
+            "and run only the re-verified signed installer."
         ),
     )
     parser.add_argument(
@@ -122,12 +130,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         return EXIT_HANDOFF_CHANGED
 
+    try:
+        result = execute_verified_installer(verified)
+    except InstallerConsentCancelledError:
+        sys.stderr.write(
+            "ChitLog update installation was cancelled. "
+            "No installer was forced to continue.\n"
+        )
+        return EXIT_INSTALLER_CANCELLED
+    except InstallerExitCodeError:
+        sys.stderr.write(
+            "The ChitLog installer returned a failure status. "
+            "The updater will not report success.\n"
+        )
+        return EXIT_INSTALLER_FAILED
+    except InstallerExecutionError:
+        sys.stderr.write(
+            "ChitLog Updater refused or failed to run the verified installer. "
+            "The updater will not report success.\n"
+        )
+        return EXIT_INSTALLER_FAILED
+
     sys.stdout.write(
-        "ChitLog update is verified and the application has exited. "
-        f"Version {verified.payload.version} is ready. "
-        "Installer execution is not enabled in this build.\n"
+        f"ChitLog {verified.payload.version} installer completed successfully "
+        f"with exit code {result.exit_code}.\n"
     )
-    return EXIT_READY_NO_EXECUTION
+    return EXIT_INSTALL_SUCCEEDED
 
 
 if __name__ == "__main__":
