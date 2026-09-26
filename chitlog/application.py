@@ -20,6 +20,7 @@ from chitlog.data.report_repository import ReportRepository
 from chitlog.data.setup_repository import SetupRepository
 from chitlog.data.settings_repository import SettingsRepository
 from chitlog.data.update_preferences_repository import UpdatePreferencesRepository
+from chitlog.data.update_schedule_repository import UpdateScheduleStateRepository
 from chitlog.data.transaction_repository import TransactionRepository
 from chitlog.data.worker_repository import WorkerRepository
 from chitlog.data.worker_payment_repository import WorkerPaymentRepository
@@ -36,6 +37,7 @@ from chitlog.services.dashboard_service import DashboardService
 from chitlog.services.setup_service import SetupService
 from chitlog.services.settings_service import SettingsService
 from chitlog.services.update_preferences_service import UpdatePreferencesService
+from chitlog.services.update_schedule_service import UpdateScheduleService
 from chitlog.services.transaction_service import TransactionService
 from chitlog.services.worker_service import WorkerService
 from chitlog.services.worker_payment_service import WorkerPaymentService
@@ -45,6 +47,8 @@ from chitlog.ui.background_notification import run_background_notification
 from chitlog.ui.login_dialog import LoginDialog
 from chitlog.ui.main_window import create_window
 from chitlog.ui.setup_wizard import SetupWizard
+from chitlog.ui.startup_update_scheduler import StartupUpdateCheckScheduler
+from chitlog.ui.update_check_runner import UpdateCheckRunner
 
 # STEP24_GLOBAL_WINDOW_ICON_HELPER_BEGIN
 def _apply_chitlog_window_icon(assets) -> None:
@@ -157,6 +161,9 @@ def main() -> int:
     backup_service = None
     settings_service = None
     update_preferences_service = None
+    update_schedule_service = None
+    update_check_runner = None
+    startup_update_scheduler = None
     liability_service = None
     report_service = None
     notification_service = None
@@ -258,6 +265,10 @@ def main() -> int:
             update_preferences_service = UpdatePreferencesService(
                 UpdatePreferencesRepository(database)
             )
+            update_schedule_service = UpdateScheduleService(
+                update_preferences_service,
+                UpdateScheduleStateRepository(database),
+            )
 
             if not setup_service.is_setup_complete():
                 _apply_chitlog_window_icon(ASSETS)
@@ -341,6 +352,21 @@ def main() -> int:
                 WorkerPayrollRepository(database),
             )
 
+        if update_schedule_service is not None:
+            update_check_runner = UpdateCheckRunner(
+                app,
+                on_real_check_start=(
+                    lambda _policy, service=update_schedule_service:
+                        service.record_check_attempt()
+                ),
+            )
+            startup_update_scheduler = StartupUpdateCheckScheduler(
+                update_preferences_service,
+                update_schedule_service,
+                update_check_runner,
+                app,
+            )
+
         # STEP24_FIRST_RUN_AUTH_REFRESH_V12
         # Setup can create the credential after the original auth service was built.
         # Refresh it immediately before the shared main-window startup path.
@@ -357,6 +383,7 @@ def main() -> int:
             backup_service=backup_service,
             settings_service=settings_service,
             update_preferences_service=update_preferences_service,
+            update_check_runner=update_check_runner,
             lazy_pages=True,
             worker_service=worker_service,
             worker_work_service=worker_work_service,
@@ -437,6 +464,16 @@ def main() -> int:
                 1200,
                 lambda service=notification_service:
                     _sync_notification_task_after_startup(service),
+            )
+
+        # Evaluate automatic updates only after the Dashboard is visible.
+        # No network work occurs on the GUI thread. The scheduler starts the
+        # shared background runner only if the saved interval is due and a
+        # real update endpoint is configured.
+        if startup_update_scheduler is not None:
+            QTimer.singleShot(
+                1500,
+                startup_update_scheduler.run_if_due,
             )
 
         if options.smoke_test:

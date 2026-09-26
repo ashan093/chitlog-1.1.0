@@ -32,6 +32,7 @@ from chitlog.core.update_config import (
 
 
 UpdateChecker = Callable[[UpdatePolicy], UpdateCheckOutcome]
+RealCheckStartedHook = Callable[[UpdatePolicy], None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,9 +110,11 @@ class UpdateCheckRunner(QObject):
         parent: QObject | None = None,
         *,
         checker: UpdateChecker = check_for_updates,
+        on_real_check_start: RealCheckStartedHook | None = None,
     ) -> None:
         super().__init__(parent)
         self._checker = checker
+        self._on_real_check_start = on_real_check_start
         self._thread: _UpdateCheckThread | None = None
 
         application = QCoreApplication.instance()
@@ -141,6 +144,18 @@ class UpdateCheckRunner(QObject):
 
         self._thread = thread
         thread.start()
+
+        if (
+            policy.manifest_url is not None
+            and self._on_real_check_start is not None
+        ):
+            try:
+                self._on_real_check_start(policy)
+            except Exception:
+                # Scheduling metadata must never break an otherwise valid
+                # manual or automatic update check.
+                pass
+
         return True
 
     @Slot()
