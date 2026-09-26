@@ -18,10 +18,16 @@ from PySide6.QtWidgets import (
 
 from chitlog.core.config import APP_NAME, APP_VERSION
 from chitlog.core.security import SecurityQuestionAnswer
+from chitlog.core.update_decision import UpdateDisposition
 from chitlog.services.settings_service import SettingsError, SettingsService
 from chitlog.ui.pages.backup_settings import BackupSettingsCard
 from chitlog.ui.pages.notifications import NotificationsPage
 from chitlog.ui.theme import SPACE
+from chitlog.ui.update_check_runner import (
+    UpdateCheckFailure,
+    UpdateCheckRunner,
+    policy_from_preferences,
+)
 from chitlog.ui.widgets import Card, button, text_label
 
 
@@ -121,6 +127,7 @@ class SettingsPage(QWidget):
         notification_service=None,
         backup_service=None,
         update_preferences_service=None,
+        update_check_runner=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -128,6 +135,20 @@ class SettingsPage(QWidget):
         self.notification_service = notification_service
         self.backup_service = backup_service
         self.update_preferences_service = update_preferences_service
+        self.update_check_runner = (
+            update_check_runner
+            if update_check_runner is not None
+            else UpdateCheckRunner(self)
+        )
+        self.update_check_runner.succeeded.connect(
+            self._manual_update_check_succeeded
+        )
+        self.update_check_runner.failed.connect(
+            self._manual_update_check_failed
+        )
+        self.update_check_runner.finished.connect(
+            self._manual_update_check_finished
+        )
 
         self.setObjectName("settingsPage")
         # Settings is intentionally denser than transaction-entry screens.
@@ -281,8 +302,9 @@ class SettingsPage(QWidget):
         self.check_updates_button = button("Check for Updates")
         self.check_updates_button.setEnabled(False)
         self.check_updates_button.setToolTip(
-            "Manual update checking becomes available when the secure "
-            "update-check runner and update endpoint are connected."
+            "Run one secure signed update check in the background. "
+            "If the update service is unavailable, ChitLog continues "
+            "working normally."
         )
         update_actions.addWidget(self.apply_update_preferences_button)
         update_actions.addWidget(self.check_updates_button)
@@ -548,6 +570,9 @@ class SettingsPage(QWidget):
         self.update_auto_check.toggled.connect(self._update_preferences_controls_changed)
         self.update_channel_combo.currentIndexChanged.connect(self._update_preferences_controls_changed)
         self.apply_update_preferences_button.clicked.connect(self._apply_update_preferences)
+        self.check_updates_button.clicked.connect(
+            self._start_manual_update_check
+        )
         self.save_credentials_button.clicked.connect(self._save_credentials)
         self.save_recovery_button.clicked.connect(self._save_recovery)
         self.show_secret_fields.toggled.connect(self._toggle_credentials)
@@ -670,7 +695,9 @@ class SettingsPage(QWidget):
         self.update_auto_check.setEnabled(True)
         self.update_channel_combo.setEnabled(True)
         self.apply_update_preferences_button.setEnabled(False)
-        self.check_updates_button.setEnabled(False)
+        self.check_updates_button.setEnabled(
+            not self.update_check_runner.running
+        )
 
     def _update_preferences_controls_changed(self, *_args) -> None:
         if self.update_preferences_service is None:
@@ -683,6 +710,9 @@ class SettingsPage(QWidget):
             or current_channel != str(getattr(self, "_saved_update_channel", current_channel))
         )
         self.apply_update_preferences_button.setEnabled(changed)
+        self.check_updates_button.setEnabled(
+            not changed and not self.update_check_runner.running
+        )
         if changed:
             self._show_feedback(
                 self.update_preferences_feedback,
@@ -702,12 +732,108 @@ class SettingsPage(QWidget):
         self._saved_update_auto_check = bool(saved.auto_check_enabled)
         self._saved_update_channel = str(saved.channel)
         self.apply_update_preferences_button.setEnabled(False)
+        self.check_updates_button.setEnabled(
+            not self.update_check_runner.running
+        )
         state = "enabled" if saved.auto_check_enabled else "disabled"
         self._show_feedback(
             self.update_preferences_feedback,
             f"Update preferences saved. Automatic checks are {state}; channel: {saved.channel}.",
         )
         self.update_preferences_changed.emit()
+
+    def _start_manual_update_check(self) -> None:
+        service = self.update_preferences_service
+        if service is None or self.update_check_runner.running:
+            return
+
+        if self.apply_update_preferences_button.isEnabled():
+            self._show_feedback(
+                self.update_preferences_feedback,
+                "Save update preference changes before checking.",
+                error=True,
+            )
+            self.check_updates_button.setEnabled(False)
+            return
+
+        preferences = service.snapshot()
+        policy = policy_from_preferences(preferences)
+
+        self.check_updates_button.setEnabled(False)
+        self._show_feedback(
+            self.update_preferences_feedback,
+            "Checking securely for updates…",
+        )
+
+        if not self.update_check_runner.start(policy):
+            self._show_feedback(
+                self.update_preferences_feedback,
+                "An update check is already running.",
+            )
+
+    def _manual_update_check_succeeded(self, outcome) -> None:
+        decision = outcome.decision
+
+        if decision.disposition is UpdateDisposition.UP_TO_DATE:
+            message = (
+                f"ChitLog {decision.current_version} is up to date."
+            )
+        elif decision.disposition is UpdateDisposition.REQUIRED_UPDATE:
+            message = (
+                f"ChitLog {decision.available_version} is marked as a "
+                "required update. Download and installation are not "
+                "connected yet."
+            )
+        else:
+            message = (
+                f"ChitLog {decision.available_version} is available. "
+                "Download and installation are not connected yet."
+            )
+
+        self._show_feedback(
+            self.update_preferences_feedback,
+            message,
+        )
+
+    def _manual_update_check_failed(
+        self,
+        failure: UpdateCheckFailure,
+    ) -> None:
+        messages = {
+            "disabled": (
+                "Update service is not configured yet. "
+                "ChitLog remains fully usable offline."
+            ),
+            "network": (
+                "Could not reach the update service. "
+                "ChitLog remains fully usable offline."
+            ),
+            "security": (
+                "Update information failed security verification and "
+                "was rejected."
+            ),
+            "policy": (
+                "Verified update information conflicted with local "
+                "update policy and was rejected."
+            ),
+            "internal": (
+                "The update check could not be completed."
+            ),
+        }
+        self._show_feedback(
+            self.update_preferences_feedback,
+            messages.get(
+                failure.kind,
+                "The update check could not be completed.",
+            ),
+            error=failure.kind in {"security", "policy", "internal"},
+        )
+
+    def _manual_update_check_finished(self) -> None:
+        changed = self.apply_update_preferences_button.isEnabled()
+        self.check_updates_button.setEnabled(
+            self.update_preferences_service is not None and not changed
+        )
 
     def _worker_payments_transaction_toggled(self, checked: bool) -> None:
         saved = bool(getattr(self, "_saved_worker_payments_in_transactions", checked))

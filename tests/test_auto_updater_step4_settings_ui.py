@@ -94,11 +94,14 @@ with tempfile.TemporaryDirectory() as d:
         assert page.update_interval_label.text() == "Every 24 hours"
         assert page.update_auto_install_label.text() == "Off"
         assert page.apply_update_preferences_button.isEnabled() is False
-        assert page.check_updates_button.isEnabled() is False
+        # Step 4C makes manual checking operational once persisted
+        # preferences are clean/saved.
+        assert page.check_updates_button.isEnabled() is True
         page.update_auto_check.setChecked(False)
         page.update_channel_combo.setCurrentIndex(page.update_channel_combo.findData("beta"))
         app.processEvents()
         assert page.apply_update_preferences_button.isEnabled() is True
+        assert page.check_updates_button.isEnabled() is False
         page.apply_update_preferences_button.click()
         app.processEvents()
         saved = update_service.snapshot()
@@ -107,6 +110,7 @@ with tempfile.TemporaryDirectory() as d:
         assert saved.auto_install_enabled is False
         assert saved.check_interval_seconds == 24 * 60 * 60
         assert page.apply_update_preferences_button.isEnabled() is False
+        assert page.check_updates_button.isEnabled() is True
         assert "preferences saved" in page.update_preferences_feedback.text().lower()
         page.close()
     finally:
