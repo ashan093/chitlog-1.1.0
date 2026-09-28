@@ -98,29 +98,59 @@ class Database:
 
         Not a portable user backup. Native backup API gives a consistent snapshot.
         Refuse active transactions. Never overwrite an earlier snapshot.
+
+        The recovery copy is closed and opened again through the normal SQLCipher
+        connection path before it is accepted. This verifies the on-disk artifact
+        that a future ChitLog process would actually need for recovery, rather
+        than trusting only the connection used while the copy was being written.
         """
         if self.connection is None or self.connection.in_transaction:
             raise DatabaseError("A snapshot requires an open, idle connection.")
         self.validate()
+
+        source_app_id = int(
+            self.connection.execute("PRAGMA application_id").fetchone()[0]
+        )
+        source_user_version = int(
+            self.connection.execute("PRAGMA user_version").fetchone()[0]
+        )
+
         self.backup_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         path = self.backup_dir / f"migration-{stamp}-{uuid4().hex}.db"
         target = None
+        probe = None
         created = False
         try:
             with path.open("xb"):
                 created = True
+
             target = self._connect(path)
             self.connection.backup(target)
-            if target.execute("PRAGMA cipher_integrity_check").fetchall():
-                raise DatabaseError("Migration snapshot failed encryption validation.")
-            if target.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
-                raise DatabaseError("Migration snapshot failed structure validation.")
-            if target.execute("PRAGMA foreign_key_check").fetchall():
-                raise DatabaseError("Migration snapshot failed relationship validation.")
+
+            # Validate the persisted recovery file through a brand-new
+            # SQLCipher connection, not only the connection used to write it.
+            target.close()
+            target = None
+
+            probe = self._connect(path)
+            self._validate_connection(probe)
+
+            if int(probe.execute("PRAGMA application_id").fetchone()[0]) != source_app_id:
+                raise DatabaseError("Migration snapshot metadata validation failed.")
+            if int(probe.execute("PRAGMA user_version").fetchone()[0]) != source_user_version:
+                raise DatabaseError("Migration snapshot metadata validation failed.")
+
+            probe.close()
+            probe = None
+
+            # Rotate only after the new recovery point is proven reopenable.
             self._rotate_migration_snapshots()
             return path
         except BaseException:
+            if probe is not None:
+                probe.close()
+                probe = None
             if target is not None:
                 target.close()
                 target = None
@@ -128,6 +158,8 @@ class Database:
                 path.unlink(missing_ok=True)
             raise
         finally:
+            if probe is not None:
+                probe.close()
             if target is not None:
                 target.close()
 
