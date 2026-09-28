@@ -106,6 +106,19 @@ Copy-Item (Join-Path $ProjectRoot "QT_LGPL_COMPLIANCE.txt") $DistDir -Force
 
 Invoke-Checked { python packaging\collect_licenses.py --output (Join-Path $DistDir "LICENSES") } "Third-party license collection failed. Do not distribute this build."
 
+$UpdaterBuildScript = Join-Path $ProjectRoot "packaging\build_updater.ps1"
+$UpdaterExe = Join-Path $DistDir "ChitLogUpdater.exe"
+if (-not (Test-Path -LiteralPath $UpdaterBuildScript)) {
+    throw "Standalone updater build script was not found: $UpdaterBuildScript"
+}
+
+Write-Host "Building and verifying standalone ChitLog updater..."
+& $UpdaterBuildScript
+
+if (-not (Test-Path -LiteralPath $UpdaterExe)) {
+    throw "Standalone updater build completed without producing: $UpdaterExe"
+}
+
 $Exe = Join-Path $DistDir "ChitLog.exe"
 Invoke-Checked { & $Exe --preview-only --smoke-test } "Packaged ChitLog preview smoke test failed."
 Invoke-Checked { & $Exe --show-paths } "Packaged ChitLog path-selection test failed."
