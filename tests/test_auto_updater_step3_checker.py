@@ -354,7 +354,7 @@ def test_invalid_signature_never_reaches_decision_payload():
     assert captured.value.kind is UpdateCheckFailureKind.SECURITY
 
 
-def test_default_policy_is_still_disabled_and_cannot_touch_network(monkeypatch):
+def test_default_policy_is_configured_without_network_at_import(monkeypatch):
     import chitlog.core.update_checker as checker
 
     touched = False
@@ -362,13 +362,15 @@ def test_default_policy_is_still_disabled_and_cannot_touch_network(monkeypatch):
     def forbidden(policy):
         nonlocal touched
         touched = True
-        raise AssertionError("default disabled check must not touch network")
+        raise AssertionError("import/config inspection must not touch network")
 
     monkeypatch.setattr(checker, "fetch_manifest_bytes", forbidden)
 
-    # Default argument was bound at definition time, so explicitly prove the
-    # shipped DEFAULT_UPDATE_POLICY remains disabled.
     from chitlog.core.update_config import DEFAULT_UPDATE_POLICY
 
-    assert DEFAULT_UPDATE_POLICY.enabled is False
+    assert DEFAULT_UPDATE_POLICY.enabled is True
+    assert DEFAULT_UPDATE_POLICY.manifest_url == (
+        "https://chitlog-updates.chitlogapp.workers.dev/"
+        "api/updates/windows/stable"
+    )
     assert touched is False

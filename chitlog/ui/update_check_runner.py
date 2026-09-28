@@ -23,11 +23,11 @@ from chitlog.core.update_checker import (
     check_for_updates,
 )
 from chitlog.core.update_config import (
-    DEFAULT_MANIFEST_URL,
     DEFAULT_MAX_INSTALLER_BYTES,
     DEFAULT_MAX_MANIFEST_BYTES,
     DEFAULT_REQUEST_TIMEOUT_SECONDS,
     UpdatePolicy,
+    manifest_url_for_channel,
 )
 
 
@@ -46,9 +46,10 @@ class UpdateCheckFailure:
 def policy_from_preferences(preferences) -> UpdatePolicy:
     """Build immutable runtime policy from persisted user preferences."""
 
+    channel = str(preferences.channel)
     return UpdatePolicy(
-        manifest_url=DEFAULT_MANIFEST_URL,
-        channel=str(preferences.channel),
+        manifest_url=manifest_url_for_channel(channel),
+        channel=channel,
         check_interval_seconds=int(
             preferences.check_interval_seconds
         ),

@@ -1,7 +1,8 @@
 """Updater policy/configuration foundation.
 
-No network calls live in this module.  The real manifest URL will be configured
-only after the ChitLog domain/Cloudflare update endpoint is ready.
+No network calls live in this module. Production update endpoints are fixed
+application policy; user preferences select a supported channel but never
+supply an arbitrary network destination.
 """
 from __future__ import annotations
 
@@ -11,12 +12,36 @@ from urllib.parse import urlsplit
 from chitlog.core.version import APP_UPDATE_CHANNEL
 
 
-DEFAULT_MANIFEST_URL: str | None = None
+STABLE_MANIFEST_URL = (
+    "https://chitlog-updates.chitlogapp.workers.dev/"
+    "api/updates/windows/stable"
+)
+BETA_MANIFEST_URL: str | None = None
+
+UPDATE_MANIFEST_URLS = {
+    "stable": STABLE_MANIFEST_URL,
+    "beta": BETA_MANIFEST_URL,
+}
+
+DEFAULT_MANIFEST_URL: str | None = STABLE_MANIFEST_URL
 DEFAULT_CHECK_INTERVAL_SECONDS = 24 * 60 * 60
 DEFAULT_REQUEST_TIMEOUT_SECONDS = 10
 DEFAULT_MAX_MANIFEST_BYTES = 256 * 1024
 DEFAULT_MAX_INSTALLER_BYTES = 300 * 1024 * 1024
 ALLOWED_UPDATE_CHANNELS = frozenset({"stable", "beta"})
+
+
+def manifest_url_for_channel(channel: str) -> str | None:
+    """Return the fixed endpoint for a supported update channel.
+
+    A supported channel may deliberately have no endpoint yet. In that case
+    the updater remains disabled for that channel instead of falling back to
+    another channel's release metadata.
+    """
+
+    if channel not in ALLOWED_UPDATE_CHANNELS:
+        raise ValueError(f"Unsupported update channel: {channel!r}")
+    return UPDATE_MANIFEST_URLS[channel]
 
 
 @dataclass(frozen=True, slots=True)

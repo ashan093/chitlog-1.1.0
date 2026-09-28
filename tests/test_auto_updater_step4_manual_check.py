@@ -58,17 +58,17 @@ def test_policy_from_preferences_preserves_channel_and_interval():
     code = r"""
 from types import SimpleNamespace
 
-from chitlog.core.update_config import DEFAULT_MANIFEST_URL
+from chitlog.core.update_config import STABLE_MANIFEST_URL
 from chitlog.ui.update_check_runner import policy_from_preferences
 
 preferences = SimpleNamespace(
-    channel="beta",
+    channel="stable",
     check_interval_seconds=43200,
 )
 policy = policy_from_preferences(preferences)
 
-assert policy.manifest_url == DEFAULT_MANIFEST_URL
-assert policy.channel == "beta"
+assert policy.manifest_url == STABLE_MANIFEST_URL
+assert policy.channel == "stable"
 assert policy.check_interval_seconds == 43200
 assert policy.request_timeout_seconds == 10
 assert policy.max_manifest_bytes == 256 * 1024
@@ -202,7 +202,7 @@ app.processEvents()
     )
 
 
-def test_settings_button_runs_default_disabled_check_without_network():
+def test_settings_button_handles_configured_service_failure_without_network():
     project = Path(__file__).resolve().parents[1]
 
     code = r"""
@@ -214,14 +214,31 @@ from PySide6.QtCore import QEventLoop, QTimer
 from PySide6.QtWidgets import QApplication
 
 from chitlog.core.security import hash_secret, hash_security_answer
+from chitlog.core.update_checker import (
+    UpdateCheckError,
+    UpdateCheckFailureKind,
+)
 from chitlog.data.database import Database
 from chitlog.data.settings_repository import SettingsRepository
 from chitlog.data.update_preferences_repository import UpdatePreferencesRepository
 from chitlog.services.settings_service import SettingsService
 from chitlog.services.update_preferences_service import UpdatePreferencesService
 from chitlog.ui.pages.settings import SettingsPage
+from chitlog.ui.update_check_runner import UpdateCheckRunner
 
 app = QApplication([])
+
+def checker(policy):
+    assert policy.manifest_url == (
+        "https://chitlog-updates.chitlogapp.workers.dev/"
+        "api/updates/windows/stable"
+    )
+    raise UpdateCheckError(
+        UpdateCheckFailureKind.NETWORK,
+        "safe simulated service failure",
+    )
+
+runner = UpdateCheckRunner(checker=checker)
 
 with tempfile.TemporaryDirectory() as d:
     root = Path(d)
@@ -251,6 +268,7 @@ with tempfile.TemporaryDirectory() as d:
             update_preferences_service=UpdatePreferencesService(
                 UpdatePreferencesRepository(db)
             ),
+            update_check_runner=runner,
         )
         page.show()
         app.processEvents()
@@ -270,7 +288,7 @@ with tempfile.TemporaryDirectory() as d:
         assert page.update_check_runner.running is False
         assert page.check_updates_button.isEnabled() is True
         text = page.update_preferences_feedback.text().lower()
-        assert "not configured yet" in text
+        assert "could not reach the update service" in text
         assert "offline" in text
 
         page.close()

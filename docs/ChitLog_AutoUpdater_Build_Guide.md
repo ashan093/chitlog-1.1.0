@@ -391,10 +391,82 @@ Step 9 establishes the first real ChitLog production Ed25519 trust anchor while 
 
 ## Remaining Production Work
 
+## Current Development Checkpoint
+
 ### Step 10 — Cloudflare Update Endpoint
-- Implement the final Windows stable-update endpoint.
-- Serve only signed update metadata required by ChitLog.
-- Keep financial/private user data completely outside the update service.
+
+#### Step 10A — Dedicated fail-closed Cloudflare Worker
+
+Live Worker:
+- Worker name: `chitlog-updates`;
+- live origin: `https://chitlog-updates.chitlogapp.workers.dev`;
+- verified health endpoint: `/healthz` returns HTTP `200` with JSON `status=ok`;
+- stable endpoint: `/api/updates/windows/stable`;
+- pre-publication stable response: HTTP `503`, JSON `status=manifest_not_published`;
+- response cache policy: `Cache-Control: no-store`;
+- pre-publication retry hint: `Retry-After: 3600`;
+- latest deployment verified during Step 10A: Cloudflare Worker version ID `ec2f165e-6533-444e-a67b-ae5383fdfb15`.
+
+Security design:
+- the Worker receives no ChitLog finance data;
+- the Worker has no ChitLog user database, D1, KV, R2, login, cookies, or application credentials;
+- the production Ed25519 private key and passphrase are never stored in Cloudflare;
+- Step 11 will publish only an already-signed public manifest;
+- unknown routes fail with `404`;
+- unsupported HTTP methods fail with `405`;
+- query strings are rejected;
+- the release endpoint remains fail-closed until a signed manifest exists.
+
+Step 10A live verification on Windows:
+- health endpoint: HTTP `200 application/json`;
+- stable endpoint: HTTP `503 application/json`;
+- state: `manifest_not_published`;
+- cache: `no-store`;
+- retry-after: `3600`;
+- result: PASS.
+
+#### Step 10B — Application endpoint wiring
+
+Base repository HEAD: `87e8b99`
+Implementation status in this revision: Windows verification complete; ready for checkpoint commit.
+
+Application policy:
+- Stable channel is pinned to `https://chitlog-updates.chitlogapp.workers.dev/api/updates/windows/stable`;
+- Beta remains deliberately unconfigured until a separate Beta endpoint exists;
+- Beta never falls back to Stable metadata;
+- users cannot supply arbitrary update-service URLs through update preferences;
+- existing TLS verification, no-redirect transport, response-size limits, signed-manifest verification, and installer hash verification remain unchanged.
+
+Windows verification completed before commit:
+- dedicated Step 10B endpoint-configuration tests: `8 passed in 0.21s`;
+- focused Step 1/3/4/10B updater regression group: `95 passed in 3.53s`;
+- live check through ChitLog's own restricted HTTPS transport: PASS;
+- live transport reached `https://chitlog-updates.chitlogapp.workers.dev/api/updates/windows/stable` with normal TLS/hostname verification;
+- live endpoint returned the expected fail-closed HTTP `503` while the manifest remains unpublished;
+- no signed manifest was consumed or trusted during the live transport check;
+- complete application suite: `733 passed, 2 skipped in 46.16s`;
+- `python -m chitlog.core.security_audit`: `CHITLOG SECURITY REVIEW: PASS`;
+- security audit found no forbidden script execution, broad network client, embedded web engine, hard-coded credential literal, developer path, SQL trace, or deferred Google Drive module;
+- `git diff --check`: no errors; Windows emitted only normal LF-to-CRLF conversion notices;
+- reviewed tracked Step 10B scope:
+  - modified `chitlog/core/update_config.py`;
+  - modified `chitlog/ui/startup_update_scheduler.py`;
+  - modified `chitlog/ui/update_check_runner.py`;
+  - modified `docs/ChitLog_AutoUpdater_Build_Guide.md`;
+  - modified `tests/test_auto_updater_step1.py`;
+  - modified `tests/test_auto_updater_step3_checker.py`;
+  - modified `tests/test_auto_updater_step4_manual_check.py`;
+  - added `tests/test_auto_updater_step10_endpoint_config.py`.
+
+Acceptance conclusion:
+Step 10 establishes a live, dedicated, fail-closed Cloudflare update service and wires the Stable application channel to its exact HTTPS manifest route without weakening ChitLog's TLS, no-redirect, signed-manifest, installer-size, or SHA-256 verification boundaries. Beta remains deliberately unconfigured rather than inheriting Stable metadata, and normal accounting remains independent of update-service availability.
+
+Custom-domain note:
+The `workers.dev` endpoint is the verified bootstrap origin. If a ChitLog `.xyz` custom domain is purchased before final release, the final application build should pin the chosen custom update hostname directly rather than rely on redirects. Existing released clients must retain access to whatever hostname they were built to use.
+
+---
+
+## Remaining Production Work
 
 ### Step 11 — Release / Signing Tooling
 - Deterministically hash the final installer.

@@ -72,8 +72,9 @@ class StartupUpdateCheckScheduler(QObject):
         preferences = self.preferences_service.snapshot()
         policy = self.policy_builder(preferences)
 
-        # The development build deliberately has no endpoint yet. Do not
-        # record a check attempt or create a worker for a disabled transport.
+        # A supported channel may deliberately be unconfigured (for example
+        # beta while only Stable is published). Do not record a check attempt
+        # or create a worker for a disabled channel transport.
         if policy.manifest_url is None:
             self.check_skipped.emit("unconfigured")
             return False

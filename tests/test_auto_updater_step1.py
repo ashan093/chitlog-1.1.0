@@ -2,9 +2,13 @@
 import pytest
 
 from chitlog.core.update_config import (
+    BETA_MANIFEST_URL,
     DEFAULT_CHECK_INTERVAL_SECONDS,
+    DEFAULT_MANIFEST_URL,
     DEFAULT_UPDATE_POLICY,
+    STABLE_MANIFEST_URL,
     UpdatePolicy,
+    manifest_url_for_channel,
 )
 from chitlog.core.version import (
     APP_NAME,
@@ -54,12 +58,25 @@ def test_invalid_versions_are_rejected(value):
         Version.parse(value)
 
 
-def test_updates_are_disabled_until_real_endpoint_is_configured():
-    assert DEFAULT_UPDATE_POLICY.enabled is False
-    assert DEFAULT_UPDATE_POLICY.manifest_url is None
+def test_stable_updates_use_the_verified_cloudflare_endpoint():
+    expected = (
+        "https://chitlog-updates.chitlogapp.workers.dev/"
+        "api/updates/windows/stable"
+    )
+
+    assert STABLE_MANIFEST_URL == expected
+    assert DEFAULT_MANIFEST_URL == expected
+    assert manifest_url_for_channel("stable") == expected
+    assert DEFAULT_UPDATE_POLICY.enabled is True
+    assert DEFAULT_UPDATE_POLICY.manifest_url == expected
     assert DEFAULT_UPDATE_POLICY.channel == "stable"
     assert DEFAULT_UPDATE_POLICY.check_interval_seconds == 24 * 60 * 60
     assert DEFAULT_UPDATE_POLICY.check_interval_seconds == DEFAULT_CHECK_INTERVAL_SECONDS
+
+
+def test_beta_channel_stays_fail_closed_until_its_endpoint_exists():
+    assert BETA_MANIFEST_URL is None
+    assert manifest_url_for_channel("beta") is None
 
 
 def test_https_manifest_url_is_accepted():
