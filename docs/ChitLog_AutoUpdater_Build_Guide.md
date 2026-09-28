@@ -317,13 +317,76 @@ Step 8D meets the bounded-cleanup requirement without weakening the signed-manif
 
 ---
 
-## Remaining Production Work
+## Current Development Checkpoint
 
 ### Step 9 — Production Trust Bootstrap
-- Create the production Ed25519 release-signing key outside the source repository.
-- Embed only the public key/key identifier.
-- Define secure storage, rotation, and revocation procedures.
-- Test a production-format signed manifest.
+
+Base repository HEAD: `859c6fd`
+Implementation status in this revision: Windows verification complete; ready for checkpoint commit.
+
+Production trust anchor:
+- algorithm: Ed25519;
+- key ID: `chitlog-update-2026-01`;
+- raw public key: `d6a28064cc1352c6fcb64fdc2c9e275ca0e4ff15dfc0a33757d69057633501d2`;
+- public-key SHA-256 fingerprint: `eeb2edd191b0074c318db350001491fd89e94801a087685a4223052ec2d0151b`;
+- only the public key is embedded in the application.
+
+Private-key handling:
+- the production private key was generated outside the Git repository;
+- it is stored as an encrypted PKCS#8 Ed25519 PEM;
+- its passphrase is separate from the key file and must never be committed, logged, pasted into ChatGPT, or bundled with ChitLog;
+- keep at least one secure offline backup of the encrypted private key;
+- do not place the signing-key directory inside the repository or a cloud-synchronized development folder.
+
+Production proof:
+- the locally held private key derived the exact embedded public key;
+- the public-key SHA-256 fingerprint matched the recorded fingerprint;
+- the real private key signed ChitLog's canonical strict manifest payload;
+- proof canonical payload SHA-256: `9be6a2ea90f8970120117b34a985907f39615fc057434ce3477cb4f749db5a16`;
+- the resulting Ed25519 signature verified against the production public key;
+- only the public proof manifest/signature are committed for regression testing.
+
+Rotation procedure:
+1. Generate a new encrypted Ed25519 key outside the repository.
+2. Add the new public key under a new key ID while retaining the old trusted public key.
+3. Ship a ChitLog release that trusts both IDs.
+4. Begin signing new manifests with the new private key only after that dual-trust release is sufficiently deployed.
+5. In a later trusted ChitLog release, remove the retired old public-key ID.
+
+Revocation procedure:
+1. Stop signing immediately with a suspected compromised private key.
+2. Remove its key ID from `TRUSTED_UPDATE_PUBLIC_KEYS` in the next safely distributed ChitLog build.
+3. Add a replacement public key under a new key ID.
+4. Publish manifests only under an uncompromised trusted key.
+5. Do not reuse a revoked key ID.
+
+Important limitation:
+A client that has not yet received a release containing the replacement trust anchor cannot learn to trust a new key solely from a manifest signed by a compromised or unknown key. Emergency recovery therefore requires a separately trusted software distribution path.
+
+Windows verification completed before commit:
+- dedicated Step 9 production-trust tests: `7 passed in 0.09s`;
+- existing Step 2 signature tests: `20 passed in 0.12s`;
+- initial focused updater/trust group: `74 passed, 1 skipped in 0.94s`;
+- legacy Step 2 packaging regression was reviewed after it correctly exposed an obsolete pre-Step-9 assumption that the production registry must be empty;
+- that regression was narrowed to the real security invariant: the frozen packaging self-test key ID must not appear in the production trust registry;
+- corrected Step 2 packaging regression: `6 passed in 0.08s`;
+- combined Step 2 signature + Step 2 packaging + Step 9 production-trust group: `33 passed in 0.18s`;
+- complete application suite after correction: `724 passed, 2 skipped in 44.29s`;
+- `python -m chitlog.core.security_audit`: `CHITLOG SECURITY REVIEW: PASS`;
+- `git diff --check`: no errors; Windows emitted only normal LF-to-CRLF conversion notices;
+- reviewed Step 9 working-tree scope:
+  - modified `chitlog/core/update_signature.py`;
+  - modified `tests/test_auto_updater_step2_signature.py`;
+  - modified `tests/test_auto_updater_step2_packaging.py`;
+  - added `tests/test_auto_updater_step9_production_trust.py`;
+  - modified `docs/ChitLog_AutoUpdater_Build_Guide.md`.
+
+Acceptance conclusion:
+Step 9 establishes the first real ChitLog production Ed25519 trust anchor while keeping all private signing material outside the repository and application. The real production private key has been locally proven to match the embedded public key and to sign the exact canonical manifest format verified by ChitLog. Rotation and revocation procedures are documented, and the packaging-only test key remains explicitly excluded from production trust.
+
+---
+
+## Remaining Production Work
 
 ### Step 10 — Cloudflare Update Endpoint
 - Implement the final Windows stable-update endpoint.

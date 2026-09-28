@@ -2,7 +2,10 @@
 from pathlib import Path
 
 from chitlog.core.update_crypto_selftest import run_update_crypto_self_test
-from chitlog.core.update_signature import TRUSTED_UPDATE_PUBLIC_KEYS
+from chitlog.core.update_signature import (
+    PRODUCTION_UPDATE_KEY_ID,
+    TRUSTED_UPDATE_PUBLIC_KEYS,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,7 +20,11 @@ def test_source_crypto_self_test_passes():
 
 
 def test_test_public_key_does_not_enter_production_trust_registry():
-    assert dict(TRUSTED_UPDATE_PUBLIC_KEYS) == {}
+    selftest_key_id = "chitlog-packaging-selftest-2026"
+
+    assert PRODUCTION_UPDATE_KEY_ID == "chitlog-update-2026-01"
+    assert set(TRUSTED_UPDATE_PUBLIC_KEYS) == {PRODUCTION_UPDATE_KEY_ID}
+    assert selftest_key_id not in TRUSTED_UPDATE_PUBLIC_KEYS
 
 
 def test_application_exposes_hidden_early_return_path():

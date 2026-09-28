@@ -38,10 +38,31 @@ class InvalidUpdateSignatureError(UpdateSignatureError):
     """Raised when Ed25519 verification fails."""
 
 
-# Production trusted public keys will be added during the release-signing step.
-# This registry deliberately starts empty so no test/demo key can accidentally
-# become trusted by a shipped ChitLog build.
-TRUSTED_UPDATE_PUBLIC_KEYS: Mapping[str, bytes] = MappingProxyType({})
+# Production release trust anchor.
+#
+# SECURITY RULE:
+# - Only PUBLIC Ed25519 verification material belongs in this source file.
+# - The encrypted production private signing key must remain outside the
+#   repository and must never be bundled with ChitLog.
+# - Revocation is performed by removing a compromised key ID from this registry
+#   in a newly shipped trusted ChitLog build.
+# - Rotation is performed by temporarily trusting both the retiring and new
+#   public key IDs, then removing the retiring key after the migration window.
+PRODUCTION_UPDATE_KEY_ID = "chitlog-update-2026-01"
+PRODUCTION_UPDATE_PUBLIC_KEY_SHA256 = (
+    "eeb2edd191b0074c318db350001491fd"
+    "89e94801a087685a4223052ec2d0151b"
+)
+_PRODUCTION_UPDATE_PUBLIC_KEY = bytes.fromhex(
+    "d6a28064cc1352c6fcb64fdc2c9e275c"
+    "a0e4ff15dfc0a33757d69057633501d2"
+)
+
+TRUSTED_UPDATE_PUBLIC_KEYS: Mapping[str, bytes] = MappingProxyType(
+    {
+        PRODUCTION_UPDATE_KEY_ID: _PRODUCTION_UPDATE_PUBLIC_KEY,
+    }
+)
 
 
 def validate_trusted_key_registry(

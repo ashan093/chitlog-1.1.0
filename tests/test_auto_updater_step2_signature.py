@@ -18,6 +18,8 @@ from chitlog.core.update_manifest import (
 from chitlog.core.update_signature import (
     InvalidTrustedKeyError,
     InvalidUpdateSignatureError,
+    PRODUCTION_UPDATE_KEY_ID,
+    PRODUCTION_UPDATE_PUBLIC_KEY_SHA256,
     TRUSTED_UPDATE_PUBLIC_KEYS,
     UnknownUpdateKeyError,
     parse_and_verify_manifest,
@@ -184,11 +186,26 @@ def test_unknown_key_id_is_rejected_before_trust():
         )
 
 
-def test_default_production_registry_is_empty_and_rejects_test_key():
-    assert dict(TRUSTED_UPDATE_PUBLIC_KEYS) == {}
+def test_default_production_registry_contains_only_real_public_key():
+    assert PRODUCTION_UPDATE_KEY_ID == "chitlog-update-2026-01"
+    assert PRODUCTION_UPDATE_PUBLIC_KEY_SHA256 == (
+        "eeb2edd191b0074c318db350001491fd"
+        "89e94801a087685a4223052ec2d0151b"
+    )
+    assert set(TRUSTED_UPDATE_PUBLIC_KEYS) == {PRODUCTION_UPDATE_KEY_ID}
+    assert (
+        TRUSTED_UPDATE_PUBLIC_KEYS[PRODUCTION_UPDATE_KEY_ID].hex()
+        == "d6a28064cc1352c6fcb64fdc2c9e275c"
+        "a0e4ff15dfc0a33757d69057633501d2"
+    )
 
+
+def test_default_production_registry_rejects_untrusted_test_key_id():
     private_key = Ed25519PrivateKey.generate()
-    manifest = signed_manifest(private_key)
+    manifest = signed_manifest(
+        private_key,
+        key_id="chitlog-update-test-key",
+    )
 
     with pytest.raises(UnknownUpdateKeyError):
         verify_manifest_signature(manifest)
