@@ -22,6 +22,7 @@ from pathlib import Path
 import tempfile
 from typing import Callable
 
+from chitlog.core.update_cache_cleanup import cleanup_update_cache_best_effort
 from chitlog.core.update_config import DEFAULT_MAX_INSTALLER_BYTES
 from chitlog.core.update_handoff import (
     UpdateHandoff,
@@ -473,6 +474,14 @@ def prepare_and_launch_updater(
         label="ChitLog application executable",
     )
     packaged_updater = resolve_packaged_updater(application)
+
+    # Housekeeping must never endanger the installer selected for this launch.
+    # Only updater-owned direct children are eligible, and cleanup failures are
+    # deliberately non-fatal.
+    cleanup_update_cache_best_effort(
+        destination_directory,
+        protected_paths=(installer.path,),
+    )
 
     staged_updater: StagedUpdaterExecutable | None = None
     handoff_path: Path | None = None
