@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-28
 Current branch: `feature/auto-updater`
-Current implementation checkpoint: `13c8349` — `Harden updater cache cleanup`
+Current implementation checkpoint: `0c986a1` — `security: establish production update trust`
 Target application version: `1.1.0`
 
 ## Purpose
@@ -264,7 +264,8 @@ This checkpoint means a normal Windows release build can no longer accidentally 
 ## Current Checkpoint
 
 Branch: `feature/auto-updater`
-Implementation commit: `13c8349`
+Implementation commit: `0c986a1`
+Implementation message: `security: establish production update trust`
 Remote: `origin/feature/auto-updater`
 Working tree after checkpoint: clean
 
@@ -317,12 +318,14 @@ Step 8D meets the bounded-cleanup requirement without weakening the signed-manif
 
 ---
 
-## Current Development Checkpoint
+## Completed Step 9 Checkpoint
 
 ### Step 9 — Production Trust Bootstrap
 
 Base repository HEAD: `859c6fd`
-Implementation status in this revision: Windows verification complete; ready for checkpoint commit.
+Implementation commit: `0c986a1` — `security: establish production update trust`
+Remote status: pushed to `origin/feature/auto-updater`
+Checkpoint status: implementation committed and pushed.
 
 Production trust anchor:
 - algorithm: Ed25519;
