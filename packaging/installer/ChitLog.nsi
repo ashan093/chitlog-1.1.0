@@ -21,6 +21,16 @@ Unicode True
 !define MULTIUSER_INSTALLMODE_COMMANDLINE
 !define MULTIUSER_INSTALLMODE_DEFAULT_CURRENTUSER
 !define MULTIUSER_USE_PROGRAMFILES64
+
+; Upgrade continuity:
+; MultiUser.nsh uses these values to restore the scope and install directory
+; selected by an existing ChitLog installation. Fresh installs still default
+; to CurrentUser because MULTIUSER_INSTALLMODE_DEFAULT_CURRENTUSER remains set.
+!define MULTIUSER_INSTALLMODE_DEFAULT_REGISTRY_KEY "${APP_REG_KEY}"
+!define MULTIUSER_INSTALLMODE_DEFAULT_REGISTRY_VALUENAME "InstallDir"
+!define MULTIUSER_INSTALLMODE_INSTDIR_REGISTRY_KEY "${APP_REG_KEY}"
+!define MULTIUSER_INSTALLMODE_INSTDIR_REGISTRY_VALUENAME "InstallDir"
+
 !define MULTIUSER_INSTALLMODE_FUNCTION ChitLogInstallModeChanged
 !define MULTIUSER_INSTALLMODEPAGE_TEXT_TOP "Choose who can use ChitLog on this computer. The current-user option is recommended and needs no machine-wide installation. The all-users option installs under Program Files and requires administrator approval."
 !define MULTIUSER_INSTALLMODEPAGE_TEXT_CURRENTUSER "Install for me only (recommended)"
@@ -69,13 +79,20 @@ Function .onInit
     !insertmacro MULTIUSER_INIT
 FunctionEnd
 
+; Make the success result explicit for the standalone updater.
+; NSIS itself keeps its documented non-zero exit levels for user/script aborts.
+Function .onInstSuccess
+    SetErrorLevel 0
+FunctionEnd
+
 Function un.onInit
     !insertmacro MULTIUSER_UNINIT
 FunctionEnd
 
 ; Use ChitLog's established per-user location by default, while giving an
-; all-users install a normal Program Files default. A previously chosen custom
-; folder is remembered independently in HKCU/HKLM through SHCTX.
+; all-users install a normal Program Files default. The MultiUser registry
+; definitions above restore an existing installation's scope/path before this
+; fallback logic is needed.
 Function ChitLogInstallModeChanged
     ReadRegStr $0 SHCTX "${APP_REG_KEY}" "InstallDir"
     ${If} $0 != ""
@@ -93,6 +110,10 @@ FunctionEnd
 Section "ChitLog application" SEC_MAIN
     SectionIn RO
     SetOutPath "$INSTDIR"
+
+    ; In-place upgrades overwrite installed program files but do not touch the
+    ; separate per-user ChitLog data directories.
+    SetOverwrite on
     File /r "${PROJECT_ROOT}\dist\ChitLog\*"
 
     WriteUninstaller "$INSTDIR\Uninstall.exe"
