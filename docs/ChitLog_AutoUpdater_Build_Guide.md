@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-28
 Current branch: `feature/auto-updater`
-Current implementation checkpoint: `0c986a1` — `security: establish production update trust`
+Current implementation checkpoint: `c2bad74` — `feat: configure production update endpoint`
 Target application version: `1.1.0`
 
 ## Purpose
@@ -264,8 +264,8 @@ This checkpoint means a normal Windows release build can no longer accidentally 
 ## Current Checkpoint
 
 Branch: `feature/auto-updater`
-Implementation commit: `0c986a1`
-Implementation message: `security: establish production update trust`
+Implementation commit: `c2bad74`
+Implementation message: `feat: configure production update endpoint`
 Remote: `origin/feature/auto-updater`
 Working tree after checkpoint: clean
 
@@ -389,9 +389,7 @@ Step 9 establishes the first real ChitLog production Ed25519 trust anchor while 
 
 ---
 
-## Remaining Production Work
-
-## Current Development Checkpoint
+## Completed Step 10 Checkpoint
 
 ### Step 10 — Cloudflare Update Endpoint
 
@@ -428,7 +426,9 @@ Step 10A live verification on Windows:
 #### Step 10B — Application endpoint wiring
 
 Base repository HEAD: `87e8b99`
-Implementation status in this revision: Windows verification complete; ready for checkpoint commit.
+Implementation commit: `c2bad74` — `feat: configure production update endpoint`
+Remote status: pushed to `origin/feature/auto-updater`
+Checkpoint status: implementation committed and pushed.
 
 Application policy:
 - Stable channel is pinned to `https://chitlog-updates.chitlogapp.workers.dev/api/updates/windows/stable`;
