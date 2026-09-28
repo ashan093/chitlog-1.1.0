@@ -1,8 +1,8 @@
 # ChitLog Auto-Updater Build Guide
 
-Last updated: 2026-09-28  
-Current branch: `feature/auto-updater`  
-Current checkpoint: `0808292` — `build: integrate updater into Windows release pipeline`  
+Last updated: 2026-09-28
+Current branch: `feature/auto-updater`
+Current implementation checkpoint: `13c8349` — `Harden updater cache cleanup`
 Target application version: `1.1.0`
 
 ## Purpose
@@ -263,18 +263,18 @@ This checkpoint means a normal Windows release build can no longer accidentally 
 
 ## Current Checkpoint
 
-Branch: `feature/auto-updater`  
-HEAD: `0808292`  
-Remote: `origin/feature/auto-updater`  
+Branch: `feature/auto-updater`
+Implementation commit: `13c8349`
+Remote: `origin/feature/auto-updater`
 Working tree after checkpoint: clean
 
-## Current Development Checkpoint
+## Completed Step 8D Checkpoint
 
 ### Step 8D — Bounded Updater Cache Cleanup
 
-Base commit: `0808292`  
-Checkpoint commit message: `Harden updater cache cleanup`  
-Verification status: complete; ready for checkpoint commit.
+Base commit: `0808292`
+Checkpoint commit message: `Harden updater cache cleanup`
+Implementation commit: `13c8349` — pushed to `origin/feature/auto-updater`.
 
 Purpose:
 - prevent updater-owned cache artifacts from accumulating indefinitely;
