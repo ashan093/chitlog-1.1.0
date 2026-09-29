@@ -416,3 +416,64 @@ def test_public_release_artifacts_contain_no_private_material(tmp_path):
         content = path.read_bytes()
         assert b"PRIVATE KEY" not in content
         assert b"passphrase" not in content.lower()
+
+class _SymlinkProbe:
+    """Fake lexical path proving symlink rejection happens before resolve()."""
+
+    def __init__(self):
+        self.resolve_called = False
+
+    def is_symlink(self):
+        return True
+
+    def resolve(self, *args, **kwargs):
+        self.resolve_called = True
+        raise AssertionError("resolve() must not be called for a symlink")
+
+
+class _KeySymlinkProbe(_SymlinkProbe):
+    def expanduser(self):
+        return self
+
+
+def test_installer_symlink_is_rejected_before_resolution(
+    tmp_path,
+    monkeypatch,
+):
+    signer = load_signer()
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    probe = _SymlinkProbe()
+
+    monkeypatch.setattr(
+        signer,
+        "expected_installer_path",
+        lambda _root: probe,
+    )
+
+    with pytest.raises(
+        signer.ReleaseSigningError,
+        match="symbolic-link installer",
+    ):
+        signer.validate_release_installer(project_root)
+
+    assert probe.resolve_called is False
+
+
+def test_private_key_symlink_is_rejected_before_resolution(tmp_path):
+    signer = load_signer()
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    probe = _KeySymlinkProbe()
+
+    with pytest.raises(
+        signer.ReleaseSigningError,
+        match="private key through a symlink",
+    ):
+        signer.load_encrypted_ed25519_private_key(
+            probe,
+            project_root=project_root,
+            passphrase=b"test-passphrase-only",
+        )
+
+    assert probe.resolve_called is False

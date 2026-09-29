@@ -119,22 +119,32 @@ def validate_release_installer(
     """Validate and hash the exact installer produced by build_installer.ps1."""
 
     root = project_root.resolve()
-    installer = expected_installer_path(root).resolve()
-    expected_installer = expected_installer_path(root).resolve()
-    hash_path = expected_installer_hash_path(root).resolve()
+    installer_candidate = expected_installer_path(root)
 
-    if installer != expected_installer:
+    # Reject the lexical path before resolving it. Resolving first would follow
+    # a symlink and make the later is_symlink() check ineffective.
+    if installer_candidate.is_symlink():
         raise ReleaseSigningError(
-            "Installer path does not match the expected ChitLog release path."
+            "Refusing to sign metadata for a symbolic-link installer."
+        )
+
+    try:
+        installer = installer_candidate.resolve(strict=True)
+    except OSError as exc:
+        raise ReleaseSigningError(
+            f"Expected release installer was not found: {installer_candidate}"
+        ) from exc
+
+    if not _is_within(installer, root):
+        raise ReleaseSigningError(
+            "Resolved release installer escaped the ChitLog repository."
         )
     if not installer.is_file():
         raise ReleaseSigningError(
             f"Expected release installer was not found: {installer}"
         )
-    if installer.is_symlink():
-        raise ReleaseSigningError(
-            "Refusing to sign metadata for a symbolic-link installer."
-        )
+
+    hash_path = expected_installer_hash_path(root).resolve()
 
     try:
         with installer.open("rb") as handle:
@@ -191,8 +201,17 @@ def load_encrypted_ed25519_private_key(
         )
 
     root = project_root.resolve()
+    key_candidate = private_key_path.expanduser()
+
+    # Reject the lexical key path before resolve(strict=True). Otherwise a
+    # symlink is followed first and the security check observes only its target.
+    if key_candidate.is_symlink():
+        raise ReleaseSigningError(
+            "Refusing to load the production private key through a symlink."
+        )
+
     try:
-        key_path = private_key_path.expanduser().resolve(strict=True)
+        key_path = key_candidate.resolve(strict=True)
     except OSError as exc:
         raise ReleaseSigningError(
             "Production private-key file was not found."
@@ -201,10 +220,6 @@ def load_encrypted_ed25519_private_key(
     if not key_path.is_file():
         raise ReleaseSigningError(
             "Production private-key path is not a file."
-        )
-    if private_key_path.is_symlink():
-        raise ReleaseSigningError(
-            "Refusing to load the production private key through a symlink."
         )
     if _is_within(key_path, root):
         raise ReleaseSigningError(
