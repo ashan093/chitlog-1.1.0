@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-29
 Current branch: `feature/auto-updater`
-Current implementation checkpoint: `3fbc4fb` — `security: harden release signer path validation`
+Current implementation checkpoint: `cae99be` — `fix: make release signer runnable by file path`
 Target application version: `1.1.0`
 
 ## Purpose
@@ -264,8 +264,8 @@ This checkpoint means a normal Windows release build can no longer accidentally 
 ## Current Checkpoint
 
 Branch: `feature/auto-updater`
-Implementation commit: `3fbc4fb`
-Implementation message: `security: harden release signer path validation`
+Implementation commit: `cae99be`
+Implementation message: `fix: make release signer runnable by file path`
 Remote: `origin/feature/auto-updater`
 Working tree after checkpoint: clean
 
@@ -561,51 +561,130 @@ Windows verification completed before the hardening commit:
 - implementation commit pushed successfully.
 
 Acceptance conclusion:
-Step 11A is considered closed only after the follow-up hardening commit `3fbc4fb`. The release signer now rejects installer/private-key symlinks before path resolution, preserving the intended fail-closed semantics without changing the production Ed25519 trust anchor, manifest format, installer hash rules, or private-key handling model.
+The Step 11A path-validation hardening issue was closed by commit `3fbc4fb`. The release signer rejects installer/private-key symlinks before path resolution, preserving the intended fail-closed semantics without changing the production Ed25519 trust anchor, manifest format, installer hash rules, or private-key handling model. A later production-use CLI launch issue was discovered and fixed separately by `cae99be`, as recorded below.
+
+#### Step 11A Production CLI Follow-Up — Direct File-Path Import Bootstrap
+
+Production-use discovery:
+- after the final v1.1.0 installer, GitHub release, website publication, and redirect-free updater Worker installer route were prepared, the first real production signing attempt invoked `packaging/sign_release_manifest.ps1`;
+- the PowerShell wrapper successfully reached the Python signer, but Python failed during module import with `ModuleNotFoundError: No module named 'chitlog'`;
+- the failure occurred before the signer reached its passphrase prompt, before the Python signer loaded private-key contents, and before any manifest/public signing artifact was produced;
+- the wrapper had already performed its normal file-existence check for the configured encrypted private-key path;
+- no production manifest was published from this failed attempt.
+
+Root cause:
+- `sign_release_manifest.ps1` intentionally launches `packaging/create_signed_update_manifest.py` by file path;
+- in that launch mode Python places the script directory (`packaging/`) at `sys.path[0]`, not the repository root;
+- the signer imports trusted ChitLog runtime models such as `chitlog.core.update_config`, so the local `chitlog` package was not importable in this direct file-path execution mode;
+- the earlier Step 11A tests imported the signer as a module and therefore did not exercise the exact wrapper/CLI launch mode that failed in production.
+
+Implementation fix:
+- implementation commit: `cae99be` — `fix: make release signer runnable by file path`;
+- `packaging/create_signed_update_manifest.py` now derives the repository root from `Path(__file__).resolve().parents[1]`;
+- that root is inserted into `sys.path` before the signer imports the local `chitlog` package;
+- no production trust anchor, manifest schema, signing algorithm, installer hash rule, URL policy, private-key format, or passphrase-handling rule changed;
+- a subprocess regression test launches the signer by absolute file path from an unrelated temporary working directory and requires `--help` to complete successfully.
+
+Windows verification before the implementation commit:
+- direct signer launch from outside the repository: exit code `0`;
+- dedicated Step 11A release-signing tests: `14 passed in 0.56s`;
+- `python -m chitlog.core.security_audit`: `CHITLOG SECURITY REVIEW: PASS`;
+- `git diff --check`: no errors; Windows emitted only normal LF-to-CRLF conversion warnings;
+- tracked implementation scope contained exactly:
+  - `packaging/create_signed_update_manifest.py`;
+  - `tests/test_auto_updater_step11_release_signing.py`;
+- staged scope contained exactly those two files;
+- `git diff --cached --check`: clean;
+- implementation commit `cae99be` was pushed successfully to `origin/feature/auto-updater`;
+- local and remote `feature/auto-updater` both resolved to `cae99be`;
+- working tree was clean after the push.
+
+Acceptance conclusion:
+The production signer is now verified in the same direct file-path launch mode used by `sign_release_manifest.ps1`. The fix is limited to Python import-path bootstrapping and does not weaken ChitLog's signing, installer-integrity, or private-key security boundaries. Production signing should resume only after this documentation checkpoint is committed and pushed.
 
 #### Step 11B Hosting / Zero-Budget Distribution Note
 
 Project constraint:
-- hosting/distribution must remain `$0` except for the planned future purchase of a `.xyz` domain.
+- hosting/distribution remains `$0` except for the planned future purchase of a `.xyz` marketing domain;
+- Cloudflare R2 was evaluated temporarily but abandoned before production deployment;
+- production installer storage remains GitHub Releases.
 
-Existing public website:
-- current website origin: `https://chitlog.chitlogapp.workers.dev/`;
-- the existing website distribution path already uses GitHub Releases together with the existing free Cloudflare Worker as a streaming proxy;
-- R2 is not required for the production update path and the temporary R2 experiment is abandoned;
-- before production manifest signing, the exact existing proxy route for the final `ChitLog-1.1.0-Setup.exe` must be inspected and verified to return the exact installer bytes without exposing a redirect to ChitLog's restricted updater transport.
+Public release repository:
+- repository: `ashan093/chitlog-releases`;
+- visibility: public;
+- v1.1.0 release/tag is published and is the first official supported downloadable/updater-enabled baseline;
+- GitHub release page: `https://github.com/ashan093/chitlog-releases/releases/tag/v1.1.0`;
+- installer asset: `ChitLog-1.1.0-Setup.exe`;
+- installer asset URL: `https://github.com/ashan093/chitlog-releases/releases/download/v1.1.0/ChitLog-1.1.0-Setup.exe`;
+- published timestamp: `2026-09-29T07:19:27Z`;
+- installer size: `75,788,037 bytes`;
+- installer SHA-256: `72beef698ff7eae97d260870d8d9c30a182dc9ccfa2c3aeb69b89efd1a79145b`;
+- an independent public GitHub download was verified to match that exact size and SHA-256;
+- the earlier v1.0.0 public release and tag were retired and removed; the old release page and installer URL were verified to return `404`;
+- a private local v1.0.0 archive is retained separately for the developer, but v1.0.0 is not the production updater baseline.
 
-Future domain migration:
-- the public ChitLog website is intended to move from the current `workers.dev` hostname to the future purchased `.xyz` domain;
-- that migration must be treated as a separate verified deployment step;
-- existing released updater clients must continue to reach the hostname they were built to use unless a future application release explicitly changes the pinned update endpoint;
-- do not rely on an HTTP redirect for a pinned updater endpoint because ChitLog's update transport deliberately rejects redirects.
+Dedicated updater Worker:
+- Worker name: `chitlog-updates`;
+- stable origin remains `https://chitlog-updates.chitlogapp.workers.dev`;
+- installer proxy deployment version ID: `07c5d864-f5f9-4b79-a2ae-4bbb3cb3869c`;
+- immutable v1.1.0 installer proxy path:
+  `https://chitlog-updates.chitlogapp.workers.dev/downloads/windows/stable/1.1.0/72beef698ff7eae97d260870d8d9c30a182dc9ccfa2c3aeb69b89efd1a79145b/ChitLog-1.1.0-Setup.exe`;
+- the proxy follows the GitHub redirect server-side so ChitLog's restricted updater transport does not see a redirect;
+- live `HEAD` returned `200` with `Content-Length: 75788037`, immutable cache policy, and the exact installer filename;
+- a full live proxy download matched `75,788,037 bytes` and SHA-256 `72beef698ff7eae97d260870d8d9c30a182dc9ccfa2c3aeb69b89efd1a79145b`;
+- the stable manifest endpoint intentionally remains fail-closed with HTTP `503` until the signed production manifest is published;
+- no production private key, passphrase, finance data, R2 bucket, or application database is present in this Worker.
+
+Marketing website:
+- source repository: `ashan093/chitlog-site`;
+- repository visibility: private;
+- production website origin: `https://chitlog.chitlogapp.workers.dev/`;
+- website release commit: `e34d3f4` — `release: publish ChitLog 1.1.0 website`;
+- Cloudflare website Worker deployment version ID: `7dbc0bb9-d7d7-4254-93f3-23bd859eda4d`;
+- live homepage/config advertise v1.1.0, `72.28 MiB`, and the exact production SHA-256;
+- `POST /api/downloads/start` accepts v1.1.0 and returns the public GitHub v1.1.0 installer URL;
+- the same API rejects retired v1.0.0 with HTTP `400`;
+- downloading through the live website's returned URL produced exactly `75,788,037 bytes` and SHA-256 `72beef698ff7eae97d260870d8d9c30a182dc9ccfa2c3aeb69b89efd1a79145b`;
+- browser downloads remain direct GitHub Release downloads; the marketing website Worker is not the updater binary proxy.
+
+Endpoint separation:
+- browser/site distribution: private `chitlog-site` source -> Cloudflare website Worker -> GitHub Releases download URL;
+- application updater distribution: ChitLog -> dedicated `chitlog-updates` Worker -> server-side GitHub installer proxy;
+- the updater must continue using the stable `workers.dev` endpoint already embedded in v1.1.0;
+- a future `.xyz` marketing-domain migration must not silently replace or redirect the updater endpoint for already-released clients.
 
 ---
 
 ## Remaining Production Work
 
-### Step 11B — Final Build, Production Signing, and Publication Packaging
-- rebuild the final post-Step-11A-hardening ChitLog 1.1.0 Windows installer for clean release provenance;
-- reuse the existing zero-budget GitHub Releases + Cloudflare Worker streaming-proxy distribution path rather than R2;
-- inspect and verify the exact existing website Worker download-proxy route before using it in the signed manifest;
-- require the proxied final installer to return the exact expected bytes with no redirect exposed to ChitLog;
-- run the Step 11A signer against the final installer using the offline production key only after the final HTTPS installer URL is proven;
-- independently verify installer/manifest hashes and Ed25519 signature;
-- prepare only public release artifacts for GitHub/Cloudflare publication;
-- keep the dedicated Cloudflare Stable manifest endpoint fail-closed until the signed manifest and exact installer are ready;
-- verify the live published manifest using ChitLog's restricted transport and production trust anchor.
+### Step 11B — Production Signing and Stable Manifest Publication
+- production-sign ChitLog v1.1.0 using the encrypted offline Ed25519 key;
+- signed policy values:
+  - `version = 1.1.0`;
+  - `minimum_supported_version = 1.1.0`;
+  - `mandatory = false`;
+  - `published_at = 2026-09-29T07:19:27Z`;
+  - installer URL = the verified immutable dedicated updater-Worker proxy URL;
+  - release-notes URL = the public GitHub v1.1.0 release page;
+- independently verify generated public manifest bytes, SHA-256, strict schema, Ed25519 signature, installer size/hash, and production key ID;
+- publish only the already-signed public manifest to the dedicated `chitlog-updates` Worker;
+- keep all private signing material/passphrases local and outside Git/Cloudflare/GitHub;
+- verify the live stable manifest using ChitLog's restricted no-redirect HTTPS transport and embedded production trust anchor;
+- verify v1.1.0 correctly evaluates the v1.1.0 manifest as up-to-date;
+- record final Worker version ID and production manifest hash in this guide.
 
-### Step 12 — Real 1.0.0 → 1.1.0 VM Upgrade Test
+### Step 12 — Clean VM Release Acceptance
+ChitLog v1.1.0 is the first official supported updater-enabled baseline. The retired v1.0.0 build did not contain this updater and is therefore not used as the production automatic-update acceptance path.
+
 On a clean disposable Windows VM:
-- install real ChitLog 1.0.0
-- create realistic disposable finance/worker/settings data
-- perform the real update to 1.1.0
-- verify database/settings survive
-- verify recovery snapshot
-- verify updater handoff/elevation/relaunch
-- verify shortcuts/uninstaller/install path
-- verify no developer paths are exposed
-
+- install the real public ChitLog v1.1.0 installer;
+- verify setup, first-run authentication, lock/logout, shortcuts, uninstaller, and selected install path;
+- create realistic disposable finance, worker, budget, liability, payment, and settings data;
+- close/reopen and verify encrypted data/settings survive;
+- verify update checks reach the live signed Stable manifest without exposing private finance data;
+- verify the current v1.1.0 manifest is treated as up-to-date;
+- exercise the full automatic upgrade path later with a controlled signed test release or the next real patch release so the path begins from v1.1.0;
+- during that upgrade-path test, verify recovery snapshot, updater handoff, installer hash verification, elevation, in-place upgrade, relaunch, preserved database/settings, shortcuts/uninstaller, and absence of developer paths.
 ### Step 13 — Release Finalization
 - resolve remaining blockers
 - final full test/security/package audit
