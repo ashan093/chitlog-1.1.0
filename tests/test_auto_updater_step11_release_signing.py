@@ -6,6 +6,8 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -33,6 +35,27 @@ def load_signer():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_direct_cli_bootstraps_repository_import_path(tmp_path):
+    """The signer must work when launched by file path outside repo cwd."""
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(SIGNER_PATH),
+            "--help",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "--private-key" in result.stdout
+    assert "--installer-url" in result.stdout
 
 
 def encrypted_key_file(

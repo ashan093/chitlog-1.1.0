@@ -17,8 +17,16 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sys
 from typing import Mapping
 from urllib.parse import urlsplit
+
+# This packaging tool is intentionally executable by file path from its
+# PowerShell wrapper. Python otherwise places only packaging/ at sys.path[0],
+# so the repository's local chitlog package is not importable.
+_PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import (
