@@ -466,13 +466,73 @@ The `workers.dev` endpoint is the verified bootstrap origin. If a ChitLog `.xyz`
 
 ---
 
-## Remaining Production Work
+## Current Development Checkpoint
 
 ### Step 11 — Release / Signing Tooling
-- Deterministically hash the final installer.
-- Construct strict manifest payload.
-- Sign using the offline/private release key.
-- Produce/publish installer, release notes, hashes, and manifest safely.
+
+#### Step 11A — Deterministic Offline Release Signer
+
+Base repository HEAD: `8ffd4fb`
+Implementation status in this revision: Windows verification complete; ready for checkpoint commit.
+
+Purpose:
+- sign only the exact final NSIS installer produced by the existing ChitLog build pipeline;
+- keep all production private-key use outside the runtime `chitlog` package;
+- require the encrypted PKCS#8 Ed25519 private key to remain outside the Git repository;
+- request the private-key passphrase interactively without echo and never accept it as a command-line argument;
+- derive the public key from the loaded private key and require an exact match to ChitLog's embedded production trust anchor before signing;
+- compute installer SHA-256/size locally and require the existing `build_installer.ps1` hash file to match;
+- construct the release payload through the same strict `UpdateManifestPayload` model used by runtime verification;
+- use an explicit `published_at` value so identical release inputs create identical Ed25519/JSON output;
+- immediately strict-parse and Ed25519-verify the generated manifest before writing public artifacts;
+- write only public manifest/hash/release metadata beneath the ignored `release/` directory.
+
+Security boundaries:
+- no private key or passphrase is stored in source, Cloudflare, release output, or command-line arguments;
+- no network client is used by the signer;
+- the signer refuses a private key stored inside the repository;
+- unencrypted private keys are rejected;
+- the signer refuses to sign an arbitrary executable path and binds to `release/ChitLog-<APP_VERSION>-Setup.exe`;
+- the direct installer URL must end with the exact release installer filename and must not use a query string;
+- actual production signing is deferred until the final installer and final direct HTTPS hosting URL are ready.
+
+Files:
+- new `packaging/create_signed_update_manifest.py`;
+- new `packaging/sign_release_manifest.ps1`;
+- new `tests/test_auto_updater_step11_release_signing.py`;
+- updated cumulative build guide.
+
+Windows verification completed before commit:
+- dedicated Step 11A signer tests: `11 passed in 0.42s`;
+- focused Step 2 manifest/signature/packaging + Step 9 production trust + Step 11A signer regressions: `82 passed in 0.58s`;
+- complete application suite: `744 passed, 2 skipped in 46.55s`;
+- `python -m chitlog.core.security_audit`: `CHITLOG SECURITY REVIEW: PASS`;
+- security audit found no forbidden script execution, broad network client, embedded web engine, hard-coded credential literal, developer path, SQL trace, or deferred Google Drive module;
+- `git diff --check`: no errors; Windows emitted only the normal LF-to-CRLF conversion notice for the build guide;
+- reviewed Step 11A working-tree scope:
+  - added `packaging/create_signed_update_manifest.py`;
+  - added `packaging/sign_release_manifest.ps1`;
+  - added `tests/test_auto_updater_step11_release_signing.py`;
+  - modified `docs/ChitLog_AutoUpdater_Build_Guide.md`.
+
+Acceptance conclusion:
+Step 11A provides deterministic, packaging-only offline manifest signing machinery without moving production private-key material into the runtime application, repository, command line, Cloudflare, or release metadata. The signer binds to the exact release installer path and build hash, validates the strict runtime manifest schema, proves the private key matches ChitLog's embedded production public trust anchor, and re-verifies generated public output before writing it. Actual production signing remains intentionally deferred until Step 11B, after the final post-Step-10 installer and direct HTTPS installer URL are fixed.
+
+Important:
+Step 11A tests use ephemeral test Ed25519 keys only. The production private key is not required for this implementation checkpoint and should not be copied into the repository for testing.
+
+---
+
+## Remaining Production Work
+
+### Step 11B — Final Build, Production Signing, and Publication Packaging
+- build the final post-Step-10 ChitLog 1.1.0 Windows installer;
+- settle the final direct HTTPS installer host before signing;
+- run the Step 11A signer against the final installer using the offline production key;
+- independently verify installer/manifest hashes and signature;
+- prepare only public release artifacts for Cloudflare/public hosting;
+- keep the Cloudflare Stable endpoint fail-closed until the signed manifest and exact installer are ready;
+- verify the live published manifest using ChitLog's restricted transport and production trust anchor.
 
 ### Step 12 — Real 1.0.0 → 1.1.0 VM Upgrade Test
 On a clean disposable Windows VM:
