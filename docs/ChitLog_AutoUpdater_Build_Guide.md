@@ -2,7 +2,7 @@
 
 Last updated: 2026-09-29
 Current branch: `feature/auto-updater`
-Current implementation checkpoint: `9b308b2` — `build: add offline release manifest signer`
+Current implementation checkpoint: `3fbc4fb` — `security: harden release signer path validation`
 Target application version: `1.1.0`
 
 ## Purpose
@@ -264,8 +264,8 @@ This checkpoint means a normal Windows release build can no longer accidentally 
 ## Current Checkpoint
 
 Branch: `feature/auto-updater`
-Implementation commit: `9b308b2`
-Implementation message: `build: add offline release manifest signer`
+Implementation commit: `3fbc4fb`
+Implementation message: `security: harden release signer path validation`
 Remote: `origin/feature/auto-updater`
 Working tree after checkpoint: clean
 
@@ -523,17 +523,76 @@ Step 11A provides deterministic, packaging-only offline manifest signing machine
 Important:
 Step 11A tests use ephemeral test Ed25519 keys only. The production private key is not required for this implementation checkpoint and should not be copied into the repository for testing.
 
+#### Step 11A Follow-Up — Fail-Closed Path Validation Hardening
+
+Initial signer implementation:
+- `9b308b2` — `build: add offline release manifest signer`
+
+Initial documentation checkpoint:
+- `ac028ed` — `docs: record Step 11A checkpoint`
+
+Follow-up security implementation:
+- `3fbc4fb` — `security: harden release signer path validation`
+- pushed to `origin/feature/auto-updater`
+
+Reason for the follow-up:
+- the initial signer resolved the expected installer path before checking `is_symlink()`;
+- `Path.resolve()` follows a symbolic link, so the later symlink check observed the resolved target instead of the lexical installer path;
+- the private-key loader had the same ordering issue: it resolved the private-key path before the symlink rejection;
+- this weakened the intended fail-closed path-validation boundary even though the remaining installer/hash/signature checks still existed.
+
+Hardening applied:
+- installer lexical path is checked for `is_symlink()` before `resolve(strict=True)`;
+- private-key lexical path is checked for `is_symlink()` before `resolve(strict=True)`;
+- the resolved installer is required to remain within the ChitLog repository;
+- deterministic regression tests prove `resolve()` is not called for a symlink candidate;
+- no production private key or passphrase was accessed during this hardening checkpoint.
+
+Windows verification completed before the hardening commit:
+- dedicated Step 11A release-signing tests: `13 passed in 0.43s`;
+- focused Step 2 manifest/signature/packaging + Step 9 production trust + Step 11A release-signing group: `84 passed in 0.61s`;
+- complete application suite: `746 passed, 2 skipped in 44.70s`;
+- `python -m chitlog.core.security_audit`: `CHITLOG SECURITY REVIEW: PASS`;
+- `git diff --check`: no errors; Windows emitted only normal LF-to-CRLF conversion warnings;
+- staged scope contained exactly:
+  - `packaging/create_signed_update_manifest.py`;
+  - `tests/test_auto_updater_step11_release_signing.py`;
+- `git diff --cached --check`: clean;
+- implementation commit pushed successfully.
+
+Acceptance conclusion:
+Step 11A is considered closed only after the follow-up hardening commit `3fbc4fb`. The release signer now rejects installer/private-key symlinks before path resolution, preserving the intended fail-closed semantics without changing the production Ed25519 trust anchor, manifest format, installer hash rules, or private-key handling model.
+
+#### Step 11B Hosting / Zero-Budget Distribution Note
+
+Project constraint:
+- hosting/distribution must remain `$0` except for the planned future purchase of a `.xyz` domain.
+
+Existing public website:
+- current website origin: `https://chitlog.chitlogapp.workers.dev/`;
+- the existing website distribution path already uses GitHub Releases together with the existing free Cloudflare Worker as a streaming proxy;
+- R2 is not required for the production update path and the temporary R2 experiment is abandoned;
+- before production manifest signing, the exact existing proxy route for the final `ChitLog-1.1.0-Setup.exe` must be inspected and verified to return the exact installer bytes without exposing a redirect to ChitLog's restricted updater transport.
+
+Future domain migration:
+- the public ChitLog website is intended to move from the current `workers.dev` hostname to the future purchased `.xyz` domain;
+- that migration must be treated as a separate verified deployment step;
+- existing released updater clients must continue to reach the hostname they were built to use unless a future application release explicitly changes the pinned update endpoint;
+- do not rely on an HTTP redirect for a pinned updater endpoint because ChitLog's update transport deliberately rejects redirects.
+
 ---
 
 ## Remaining Production Work
 
 ### Step 11B — Final Build, Production Signing, and Publication Packaging
-- build the final post-Step-10 ChitLog 1.1.0 Windows installer;
-- settle the final direct HTTPS installer host before signing;
-- run the Step 11A signer against the final installer using the offline production key;
-- independently verify installer/manifest hashes and signature;
-- prepare only public release artifacts for Cloudflare/public hosting;
-- keep the Cloudflare Stable endpoint fail-closed until the signed manifest and exact installer are ready;
+- rebuild the final post-Step-11A-hardening ChitLog 1.1.0 Windows installer for clean release provenance;
+- reuse the existing zero-budget GitHub Releases + Cloudflare Worker streaming-proxy distribution path rather than R2;
+- inspect and verify the exact existing website Worker download-proxy route before using it in the signed manifest;
+- require the proxied final installer to return the exact expected bytes with no redirect exposed to ChitLog;
+- run the Step 11A signer against the final installer using the offline production key only after the final HTTPS installer URL is proven;
+- independently verify installer/manifest hashes and Ed25519 signature;
+- prepare only public release artifacts for GitHub/Cloudflare publication;
+- keep the dedicated Cloudflare Stable manifest endpoint fail-closed until the signed manifest and exact installer are ready;
 - verify the live published manifest using ChitLog's restricted transport and production trust anchor.
 
 ### Step 12 — Real 1.0.0 → 1.1.0 VM Upgrade Test
