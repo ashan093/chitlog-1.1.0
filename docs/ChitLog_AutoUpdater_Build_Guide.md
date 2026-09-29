@@ -1,8 +1,8 @@
 # ChitLog Auto-Updater Build Guide
 
-Last updated: 2026-09-28
+Last updated: 2026-09-29
 Current branch: `feature/auto-updater`
-Current implementation checkpoint: `c2bad74` — `feat: configure production update endpoint`
+Current implementation checkpoint: `9b308b2` — `build: add offline release manifest signer`
 Target application version: `1.1.0`
 
 ## Purpose
@@ -264,8 +264,8 @@ This checkpoint means a normal Windows release build can no longer accidentally 
 ## Current Checkpoint
 
 Branch: `feature/auto-updater`
-Implementation commit: `c2bad74`
-Implementation message: `feat: configure production update endpoint`
+Implementation commit: `9b308b2`
+Implementation message: `build: add offline release manifest signer`
 Remote: `origin/feature/auto-updater`
 Working tree after checkpoint: clean
 
@@ -466,14 +466,16 @@ The `workers.dev` endpoint is the verified bootstrap origin. If a ChitLog `.xyz`
 
 ---
 
-## Current Development Checkpoint
+## Completed Step 11A Checkpoint
 
 ### Step 11 — Release / Signing Tooling
 
 #### Step 11A — Deterministic Offline Release Signer
 
 Base repository HEAD: `8ffd4fb`
-Implementation status in this revision: Windows verification complete; ready for checkpoint commit.
+Implementation commit: `9b308b2` — `build: add offline release manifest signer`
+Remote status: pushed to `origin/feature/auto-updater`
+Checkpoint status: implementation committed and pushed.
 
 Purpose:
 - sign only the exact final NSIS installer produced by the existing ChitLog build pipeline;
