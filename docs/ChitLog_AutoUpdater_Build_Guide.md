@@ -738,18 +738,97 @@ Step 11B production signing and publication is complete. The final v1.1.0 instal
 
 ## Remaining Production Work
 
-### Step 12 — Clean VM Release Acceptance
+### Step 12 - Clean VM Release Acceptance - Baseline Completed
+
 ChitLog v1.1.0 is the first official supported updater-enabled baseline. The retired v1.0.0 build did not contain this updater and is therefore not used as the production automatic-update acceptance path.
 
-On a clean disposable Windows VM:
-- install the real public ChitLog v1.1.0 installer;
-- verify setup, first-run authentication, lock/logout, shortcuts, uninstaller, and selected install path;
-- create realistic disposable finance, worker, budget, liability, payment, and settings data;
-- close/reopen and verify encrypted data/settings survive;
-- verify update checks reach the live signed Stable manifest without exposing private finance data;
-- verify the current v1.1.0 manifest is treated as up-to-date;
-- exercise the full automatic upgrade path later with a controlled signed test release or the next real patch release so the path begins from v1.1.0;
-- during that upgrade-path test, verify recovery snapshot, updater handoff, installer hash verification, elevation, in-place upgrade, relaunch, preserved database/settings, shortcuts/uninstaller, and absence of developer paths.
+Clean disposable Windows 11 x64 VM acceptance completed on 2026-09-30 against the real public v1.1.0 installer.
+
+Verified release artifact:
+- installer: `ChitLog-1.1.0-Setup.exe`;
+- public installer size: `75,788,037` bytes;
+- public installer SHA-256: `72beef698ff7eae97d260870d8d9c30a182dc9ccfa2c3aeb69b89efd1a79145b`;
+- installation scope tested: `CurrentUser`;
+- default install directory tested: `%LOCALAPPDATA%\Programs\ChitLog`.
+
+Clean-VM acceptance evidence:
+- clean Windows 11 x64 baseline contained no ChitLog install directories or ChitLog registry entries before installation;
+- the installer created `ChitLog.exe`, `ChitLogUpdater.exe`, and `Uninstall.exe`;
+- application version metadata reported `1.1.0`;
+- CurrentUser registry registration, Start Menu shortcut, Desktop shortcut, uninstall registration, and default install path were correct;
+- first launch opened the First Run Setup flow;
+- PIN mismatch validation and the secret visibility toggle worked;
+- completing first-run setup opened the main application;
+- Lock worked immediately on the same first run, confirming the first-run authentication refresh repair in the real packaged build;
+- post-setup restart required normal authentication instead of repeating First Run Setup.
+
+Encrypted local-data acceptance:
+- the application database was created at `%LOCALAPPDATA%\ChitLog\data\chitlog.db`, outside the installation directory;
+- `--check-database` completed successfully with exit code `0`;
+- the encrypted database did not expose the plaintext `SQLite format 3` header;
+- realistic disposable transaction, budget, liability, permanent-worker, temporary-worker, work-record, payment/advance, report, Undo, currency, and theme data were exercised;
+- all tested data and settings survived close/reopen;
+- the encrypted database remained valid after the persistence test.
+
+Authentication and recovery acceptance:
+- repeated incorrect PIN attempts remained available without an account lockout;
+- empty and incorrect recovery answers were rejected safely;
+- correct recovery answers were accepted;
+- recovery offered both PIN and Password as replacement login methods;
+- credential mismatch validation worked;
+- the login method was successfully changed from PIN to Password;
+- the previous PIN was rejected after the reset;
+- the new password worked for login and immediate Lock/unlock;
+- restart showed the Password login screen;
+- finance and worker data remained intact through credential recovery.
+
+Uninstall/reinstall preservation acceptance:
+- before uninstall, the encrypted database SHA-256 was `843762fcd82ae14425dd1acb6e095eb7e50e2873670544ab124b7d284ba316fd`;
+- before uninstall, `appearance.json` SHA-256 was `82c9fda5a0d7f55699b09c5b3509484b5b1c8e3b0eac9211dfc1dcbea38e72f3`;
+- uninstall removed the installed application directory, ChitLog application/uninstall registry keys, Start Menu folder, and Desktop shortcut;
+- uninstall preserved the ChitLog user-data root, encrypted database, and appearance settings;
+- database and appearance hashes were unchanged by uninstall;
+- reinstall used the same verified public v1.1.0 installer;
+- reinstall restored `ChitLog.exe`, `ChitLogUpdater.exe`, `Uninstall.exe`, CurrentUser registry registration, and shortcuts;
+- reinstall did not change the preserved database or appearance hashes before first launch;
+- reinstall returned directly to the existing Password login instead of First Run Setup;
+- the new password and all disposable finance/worker data remained valid;
+- final `--check-database` validation returned exit code `0`.
+
+Live production updater acceptance:
+- Settings reported current version `1.1.0`, Stable channel, and automatic installation Off;
+- the installed GUI completed a real production `Check for Updates`;
+- the signed production manifest was accepted and v1.1.0 was correctly reported as up to date;
+- the live production manifest was exactly `741` bytes with SHA-256 `ee33023877139d94c76f1eb5ef1253c24f66a300eeb766d214e57b51c858cf0e`;
+- manifest schema version was `1`;
+- signing key ID was `chitlog-update-2026-01`;
+- signed payload identified version `1.1.0`, channel `stable`, platform `windows`, architecture `x64`, minimum supported version `1.1.0`, and `mandatory=false`;
+- signed installer metadata matched the immutable v1.1.0 installer size and SHA-256;
+- accounting and worker data remained usable after the live update check.
+
+Offline/failure-recovery acceptance:
+- with the VM network adapter disconnected, the production hostname was unreachable;
+- ChitLog still started, authenticated, and allowed local finance/worker access;
+- the manual update check failed with the safe offline message while the UI remained responsive;
+- `--check-database` still returned exit code `0` while offline;
+- after network reconnection, the exact production manifest hash was retrieved again;
+- a second installed-GUI update check recovered normally and again reported ChitLog 1.1.0 as up to date.
+
+Locked-session exit acceptance:
+- closing the locked authentication window terminated ChitLog completely;
+- restarting required Password authentication;
+- all disposable Step 12 data remained intact;
+- final local database validation returned exit code `0`.
+
+Acceptance conclusion:
+- the v1.1.0 clean-install baseline, authentication/recovery, local encrypted-data persistence, uninstall/reinstall preservation, production up-to-date check, offline failure handling, network recovery, and locked-session exit behavior are accepted on the disposable Windows 11 x64 VM;
+- the published v1.1.0 installer and production manifest remain immutable;
+- no v1.1.0 artifact or manifest was modified to simulate a newer release.
+
+Remaining Step 12 work:
+- exercise the full automatic upgrade path with a controlled signed later patch/test release or the next real patch release, beginning from the immutable public v1.1.0 baseline;
+- that upgrade-path acceptance must verify the pre-migration recovery snapshot, verified installer download/hash, updater handoff, elevation, in-place installer execution, successful relaunch, preserved database/settings, shortcuts/uninstaller continuity, and absence of developer paths;
+- do not mutate or republish the existing v1.1.0 installer or signed manifest merely to simulate an update.
 ### Step 13 — Release Finalization
 - resolve any blockers discovered during clean-VM acceptance;
 - run the final full test/security/package provenance audit;
